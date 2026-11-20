@@ -10,7 +10,7 @@ const data = {
 const state = {
   scene: null, camera: null, renderer: null, raycaster: new THREE.Raycaster(),
   clock: new THREE.Clock(), gizmo: null, gizmoHandles: [], drag: null,
-  activePointers: new Map(), orbit: null, pinch: null, frame: 0,
+  activePointers: new Map(), orbit: null, pinch: null, frame: 0, lastFrame: 0,
   active: false, luaWorker: null, luaTimer: 0,
 };
 const COLORS = { x: 0xff626f, y: 0x66e6ae, z: 0x63a9ff };
@@ -113,9 +113,10 @@ function updateCamera() {
   const target=data.selected?.getWorldPosition(new THREE.Vector3())||new THREE.Vector3(); const s=state.spherical;
   state.camera.position.set(target.x+s.radius*Math.sin(s.phi)*Math.sin(s.theta),target.y+s.radius*Math.cos(s.phi),target.z+s.radius*Math.sin(s.phi)*Math.cos(s.theta)); state.camera.lookAt(target);
 }
-function tick() {
+function tick(time=0) {
   state.frame=0; if(!state.active||document.hidden)return;
-  const dt=Math.min(state.clock.getDelta(),.04); updateCamera(); syncGizmo();
+  if(time-state.lastFrame<1000/60){state.frame=requestAnimationFrame(tick);return;}
+  state.lastFrame=time; const dt=Math.min(state.clock.getDelta(),.04); updateCamera(); syncGizmo();
   if(data.playing){const p=data.objects.find(o=>o.name.startsWith('Player'));if(p){p.position.x+=moveVec.x*dt*3.2;p.position.z+=moveVec.z*dt*3.2}}
   state.renderer?.render(state.scene,state.camera); state.frame=requestAnimationFrame(tick);
 }
@@ -176,7 +177,7 @@ function endPointer(e) {
 viewport.addEventListener('pointerdown',e=>{
   state.activePointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
   if(data.playing){if(e.clientX>viewport.getBoundingClientRect().left+viewport.clientWidth*.32){state.orbit={pointerId:e.pointerId,lastX:e.clientX,lastY:e.clientY,play:true};viewport.setPointerCapture(e.pointerId);}return;}
-  if(state.activePointers.size===2){state.drag=null;state.orbit=null;const a=[...state.activePointers.values()];state.pinch={distance:Math.max(1,Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)),radius:state.spherical.radius};return;}
+  if(state.activePointers.size===2){state.drag=null;state.orbit=null;viewport.setPointerCapture(e.pointerId);const a=[...state.activePointers.values()];state.pinch={distance:Math.max(1,Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)),radius:state.spherical.radius};return;}
   state.raycaster.setFromCamera(pointToNdc(e),state.camera);syncGizmo();const gh=state.raycaster.intersectObjects(state.gizmoHandles.filter(h=>h.visible),false);
   if(gh.length){beginGizmoDrag(gh[0],e);return;}
   state.orbit={pointerId:e.pointerId,startX:e.clientX,startY:e.clientY,lastX:e.clientX,lastY:e.clientY};viewport.setPointerCapture(e.pointerId);

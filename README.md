@@ -1,4 +1,4 @@
-# MobiForge 3D v0.1.3
+# MobiForge 3D v0.1.4
 
 Editor Android en horizontal, creado con Capacitor, Three.js y runtime Lua aislado.
 
