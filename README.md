@@ -1,6 +1,6 @@
 # MobiForge 3D
 
-Prototipo de motor/editor de juegos pensado para crear desde un teléfono Android. App Capacitor con escena 3D Three.js y runtime Lua Fengari.
+Prototipo de motor/editor de juegos pensado para crear desde un teléfono Android en orientación horizontal. App Capacitor con escena 3D Three.js y runtime Lua Fengari.
 
 ## Incluye en v0.1
 - Pantalla de proyectos con plantillas **First Person Starter (FPS)** y **Third Person Starter (TPS)**, y creación de proyectos propios.
@@ -23,6 +23,9 @@ cd android && ./gradlew assembleDebug
 ```
 
 En GitHub Actions se compila el APK debug al hacer push a `main` o al ejecutar manualmente `Build Android APK`. Se publica como artifact y como release pública.
+
+## Corrección v0.1.1
+Se protege el bucle de renderizado hasta inicializar el viewport, evitando un fallo de arranque, y el workflow fuerza `screenOrientation="landscape"` en Android.
 
 ## Alcance y límites conocidos
 Esto es una **primera base funcional**, no un reemplazo completo de Godot. El editor Lua tiene runtime embebido, pero todavía no ofrece API Lua para controlar nodos; el movimiento FPS/TPS es una demo con geometría básica, no un juego completo con colisiones o importación de assets. Los cambios de escena se guardan localmente en el dispositivo. El APK de Actions es debug y no está firmado para Play Store.
