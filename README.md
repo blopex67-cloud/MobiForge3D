@@ -15,3 +15,12 @@ El texto usa Lua válido en cuanto a funciones, tablas, `pcall`, `math.sin` y `u
 
 ## Guardado
 Las escenas y los scripts persisten en rutas virtuales `scenes/` y `scripts/` por proyecto en `localStorage`. La compilación y el APK se verifican en CI; eso no reemplaza la prueba visual/táctil en Android.
+
+
+## v0.1.14 · Biblioteca, HUD y nodos
+- La pantalla de proyectos ahora desplaza su contenido verticalmente dentro de su propia zona; encabezado y pie permanecen fijos.
+- Ajuste responsive de barras y docks, columnas, botones y texto para evitar recortes en horizontal.
+- Nodos disponibles incluyen grupo, mallas de cono y toro, formas, cámara y luces; las mallas geométricas añadidas aparecen rojas como categoría 3D.
+- Las cámaras se usan al ejecutar si hay una Camera3D; los nodos de física y colisión son marcadores, no simulación real.
+- En el Inspector de una raíz de modelo con varias mallas, “Unir piezas compatibles” combina mallas estáticas en una sola geometría y mantiene materiales. Meshes animados, multmaterial o con atributos incompatibles se omiten o se informa el fallo; no se promete fusión de rigs.
+- No se confirmó aún en tablet/teléfono; revisar los controles táctiles y el comportamiento del scroll en el dispositivo real.
