@@ -1,25 +1,17 @@
-# MobiForge 3D v0.1.5
+# MobiForge 3D v0.1.6
 
-Editor Android táctil en horizontal con una interfaz de trabajo sobria inspirada en editores 3D: árbol de escena y archivos a la izquierda, viewport 3D con barra de herramientas al centro, inspector a la derecha y panel inferior. La captura del usuario se toma como referencia de distribución y densidad; no usa tema neón, tarjetas flotantes ni gradientes decorativos de interfaz.
+Prototipo Android horizontal de editor 3D móvil. Interfaz compacta con visor central amplio, árbol de escena, inspector, Lua y herramientas de transformación.
 
-## Incluye
-- Escenas de inicio FPS y TPS; creación de proyectos y nodos básicos.
-- Gizmos 3D de mover, rotar y escalar en ejes X/Y/Z, con prioridad de raycast y órbita bloqueada mientras arrastras.
-- Tamaño aparente de gizmos ajustado por distancia, viewport redimensionable y zoom de dos dedos.
-- Runtime Lua en Web Worker, sin bibliotecas `os`, `io`, `debug` ni `package`, con límite de ejecución de 1,5 segundos.
-- Ajustes de rendimiento móvil: DPR limitado, sombras contenidas, render detenido fuera del editor y liberación de recursos al cambiar de escena.
-- Build CI fija la Activity principal en landscape y valida que el manifiesto Android combinado mantenga landscape antes de publicar el APK.
+## Mejoras recientes
+- HUD más bajo, paneles laterales estrechos y panel Lua/HUD que no tapa la mayor parte del visor.
+- Se quitó el botón inferior redundante de gizmos: mover, rotar y escalar se seleccionan con iconos en la barra del visor.
+- Iconos SVG Lucide incluidos localmente.
+- El botón de actualización y la comprobación al abrir consultan el último Release público. Si existe una versión nueva, la app descarga el APK y abre el instalador Android; Android exige que la persona confirme. La primera vez puede pedir permiso para instalar apps de esta fuente.
+- APK firmado con clave estable y `versionCode` creciente para permitir actualizaciones sucesivas dentro de Android.
+- Orientación horizontal validada en el manifiesto combinado.
 
-## Build local
-Requiere Node.js 20+ y Android SDK/JDK 21.
+## Importante para instalar
+La v0.1.5 se firmó con una clave temporal de CI; Android no acepta instalar sobre ella una APK con la nueva clave estable. Para pasar a v0.1.6 hay que reemplazar la instalación anterior una vez; después, la app avisa y prepara futuras actualizaciones sin buscar ni descargar el APK manualmente. Android siempre muestra su confirmación de instalación: una app normal no puede actualizarse en silencio.
 
-```sh
-npm install
-npm run build
-npx cap add android
-npx cap sync android
-cd android && ./gradlew assembleDebug
-```
-
-## Verificación y alcance
-Una compilación y la validación del manifest no prueban la apariencia, la orientación efectiva ni la respuesta táctil en un teléfono; esa verificación física queda pendiente. Es un prototipo, no un reemplazo completo de Godot: todavía no incluye colisiones completas, importación GLB ni API Lua para manipular nodos. APK debug, no firmado para Play Store.
+## Alcance
+Build, firma y orientación pueden verificarse en CI; aún hace falta probar el encuadre y los controles en un teléfono real. Prototipo: no reemplaza Godot ni incluye todavía importación GLB o colisiones completas. La distribución actual es APK, no Play Store.

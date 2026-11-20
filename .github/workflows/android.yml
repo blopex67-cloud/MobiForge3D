@@ -25,9 +25,46 @@ jobs:
       - name: Install dependencies
         run: npm install
       - name: Build web app
+        env:
+          VITE_APP_VERSION: 0.1.6
         run: npm run build
       - name: Generate Android wrapper
         run: npx cap add android
+      - name: Add native in-app updater and version code
+        env:
+          APP_VERSION: 0.1.6
+        run: |
+          mkdir -p android/app/src/main/java/com/blopex/mobiforge3d android/app/src/main/res/xml
+          cp android-native/AppUpdaterPlugin.java android/app/src/main/java/com/blopex/mobiforge3d/
+          cp android-native/MainActivity.java android/app/src/main/java/com/blopex/mobiforge3d/
+          cp android-native/file_paths.xml android/app/src/main/res/xml/
+          python3 - <<'PY'
+          import os, re, xml.etree.ElementTree as ET
+          from pathlib import Path
+          ET.register_namespace('android', 'http://schemas.android.com/apk/res/android')
+          ns = '{http://schemas.android.com/apk/res/android}'
+          manifest_path = Path('android/app/src/main/AndroidManifest.xml')
+          tree = ET.parse(manifest_path); root = tree.getroot()
+          if not any(e.get(ns+'name') == 'android.permission.REQUEST_INSTALL_PACKAGES' for e in root.findall('uses-permission')):
+              ET.SubElement(root, 'uses-permission', {ns+'name':'android.permission.REQUEST_INSTALL_PACKAGES'})
+          app = root.find('application')
+          if app is None: raise SystemExit('Android application node missing')
+          provider_name = 'androidx.core.content.FileProvider'
+          if not any(e.get(ns+'name') == provider_name for e in app.findall('provider')):
+              provider = ET.SubElement(app, 'provider', {ns+'name':provider_name, ns+'authorities':'com.blopex.mobiforge3d.fileprovider', ns+'exported':'false', ns+'grantUriPermissions':'true'})
+              ET.SubElement(provider, 'meta-data', {ns+'name':'android.support.FILE_PROVIDER_PATHS', ns+'resource':'@xml/file_paths'})
+          tree.write(manifest_path, encoding='utf-8', xml_declaration=True)
+          version = os.environ['APP_VERSION']
+          parts = [int(x) for x in version.split('.')]
+          version_code = parts[0]*10000 + parts[1]*100 + parts[2]
+          gradle = Path('android/app/build.gradle')
+          text = gradle.read_text()
+          text, count = re.subn(r'versionCode\s+\d+', f'versionCode {version_code}', text, count=1)
+          if count != 1: raise SystemExit('Could not set Android versionCode')
+          text = re.sub(r'versionName\s+[\"\'][^\"\']*[\"\']', f'versionName "{version}"', text, count=1)
+          gradle.write_text(text)
+          print(f'Android versionCode set to {version_code}')
+          PY
       - name: Set launcher to landscape and compile APK
         run: |
           npx cap sync android
@@ -64,7 +101,26 @@ jobs:
           PY
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleRelease --no-daemon
+      - name: Sign APK for in-app updates
+        env:
+          KEYSTORE_B64: ${{ secrets.MOBIFORGE_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.MOBIFORGE_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/mobiforge-release.p12"
+          ALIGNED="$RUNNER_TEMP/mobiforge-aligned.apk"
+          trap 'rm -f "$KEYSTORE" "$ALIGNED"' EXIT
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$KEYSTORE"
+          UNSIGNED=android/app/build/outputs/apk/release/app-release-unsigned.apk
+          OUT=android/app/build/outputs/apk/release/MobiForge3D.apk
+          ZIPALIGN=$(find "$ANDROID_HOME/build-tools" -name zipalign -type f | sort -V | tail -n1)
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n1)
+          test -x "$ZIPALIGN" && test -x "$APKSIGNER" && test -s "$UNSIGNED"
+          "$ZIPALIGN" -f -p 4 "$UNSIGNED" "$ALIGNED"
+          "$APKSIGNER" sign --ks "$KEYSTORE" --ks-key-alias mobiforge --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEYSTORE_PASSWORD --out "$OUT" "$ALIGNED"
+          "$APKSIGNER" verify --verbose --print-certs "$OUT"
+          test -s "$OUT"
       - name: Verify merged Android manifest is landscape
         run: |
           python3 - <<'PY'
@@ -94,16 +150,16 @@ jobs:
       - name: Publish APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MobiForge3D-v0.1.5-debug-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: MobiForge3D-v0.1.6-signed-APK
+          path: android/app/build/outputs/apk/release/MobiForge3D.apk
           if-no-files-found: error
           retention-days: 30
       - name: Publish public APK release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.1.5
-          name: MobiForge 3D v0.1.5 (interfaz clásica móvil)
-          body: 'Interfaz sobria de editor 3D inspirada en la referencia del usuario; gizmos táctiles, Lua aislado, orientación horizontal y manifiesto combinado validado. Build debug; falta prueba en teléfono.'
-          files: android/app/build/outputs/apk/debug/app-debug.apk
+          tag_name: v0.1.6
+          name: MobiForge 3D v0.1.6 (visor amplio y actualización integrada)
+          body: 'HUD compacto con visor ampliado, herramientas de transformación por iconos locales, búsqueda automática de actualizaciones firmadas y confirmación de Android al instalar. Primera instalación con firma estable; la v0.1.5 requiere sustituirse manualmente una vez.'
+          files: android/app/build/outputs/apk/release/MobiForge3D.apk
           make_latest: true
           fail_on_unmatched_files: true

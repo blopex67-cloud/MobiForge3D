@@ -1,0 +1,2 @@
+The SVG icons in this folder are from Lucide (https://lucide.dev), licensed under ISC.
+Copyright (c) Lucide Contributors.

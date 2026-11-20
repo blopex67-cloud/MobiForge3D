@@ -1,5 +1,8 @@
 import './style.css';
 import * as THREE from 'three';
+import { Capacitor, registerPlugin } from '@capacitor/core';
+const AppUpdater = registerPlugin('AppUpdater');
+const APP_VERSION = import.meta.env.VITE_APP_VERSION || '0.1.6';
 
 const $ = (s) => document.querySelector(s);
 const home = $('#home'), editor = $('#editor'), viewport = $('#viewport');
@@ -198,12 +201,29 @@ $('#jump').addEventListener('pointerdown',e=>e.stopPropagation());$('#action').a
 const stick=$('#stick'),knob=$('.stick-knob');let stickId=null,moveVec={x:0,z:0};
 function stickMove(e){const r=stick.getBoundingClientRect();let x=e.clientX-r.left-r.width/2,y=e.clientY-r.top-r.height/2,m=Math.min(23,Math.hypot(x,y)),a=Math.atan2(y,x);x=Math.cos(a)*m;y=Math.sin(a)*m;knob.style.transform=`translate(${x}px,${y}px)`;moveVec.x=x/23;moveVec.z=y/23;}
 stick.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();stickId=e.pointerId;stick.setPointerCapture(e.pointerId);stickMove(e);});stick.addEventListener('pointermove',e=>{if(stickId===e.pointerId)stickMove(e);});stick.addEventListener('pointerup',e=>{e.stopPropagation();stickId=null;moveVec={x:0,z:0};knob.style.transform='';});stick.addEventListener('pointercancel',()=>{stickId=null;moveVec={x:0,z:0};knob.style.transform='';});
-document.querySelectorAll('.tool').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tool').forEach(x=>x.classList.remove('active'));b.classList.add('active');data.tab=b.dataset.tab;openDrawer(data.tab);});
+document.querySelectorAll('.tool').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tool').forEach(x=>x.classList.remove('active'));b.classList.add('active');data.tab=b.dataset.tab;if(data.tab==='scene')$('#drawer').classList.remove('open');else openDrawer(data.tab);});
+document.querySelectorAll('.gizmo-mode').forEach(b=>b.onclick=()=>{document.querySelectorAll('.gizmo-mode').forEach(x=>x.classList.toggle('active',x===b));setGizmoMode(b.dataset.mode);});
+async function checkForUpdate(automatic=false){
+  if(!Capacitor.isNativePlatform()){toast('Actualizaciones automáticas disponibles en Android');return;}
+  try{
+    const res=await fetch('https://api.github.com/repos/blopex67-cloud/MobiForge3D/releases/latest',{headers:{Accept:'application/vnd.github+json'}});
+    if(!res.ok)throw new Error('No se pudo consultar la versión');
+    const rel=await res.json(),latest=String(rel.tag_name||'').replace(/^v/i,''),current=APP_VERSION;
+    const n=s=>s.split('.').map(x=>parseInt(x,10)||0),a=n(latest),b=n(current),newer=a.some((v,i)=>v>(b[i]||0)&&a.slice(0,i).every((x,j)=>x===(b[j]||0)));
+    if(!newer){if(!automatic)toast('La app está actualizada');return;}
+    const asset=(rel.assets||[]).find(x=>x.name==='MobiForge3D.apk');if(!asset)throw new Error('No se encontró el APK de actualización');
+    if(!window.confirm(`Hay una actualización ${latest}. Descargar e instalar ahora? Android pedirá confirmar la instalación.`))return;
+    toast('Descargando actualización…');await AppUpdater.install({url:asset.browser_download_url,version:latest});
+  }catch(err){toast(err?.message||'No se pudo actualizar');}
+}
+$('#checkUpdates').onclick=()=>checkForUpdate(false);
+$('#checkUpdatesHome').onclick=()=>checkForUpdate(false);
+setTimeout(()=>checkForUpdate(true),1800);
 function openDrawer(tab){const d=$('#drawer'),body=$('#drawerContent');d.classList.add('open');
-  if(tab==='script'){body.innerHTML='<div class="drawer-inner"><h3>⌘　SCRIPT LUA</h3><div class="lua-safe">Runtime aislado · límite de 1,5 s por ejecución</div><textarea class="codebox" id="luaEditor" spellcheck="false"></textarea><div class="action-row"><button id="runLua" class="small-btn accent">▶ Ejecutar script</button><button id="resetLua" class="small-btn">Restaurar plantilla</button><span id="luaResult" class="lua-result"></span></div></div>';$('#luaEditor').value=data.script;$('#luaEditor').oninput=e=>data.script=e.target.value;$('#runLua').onclick=runLua;$('#resetLua').onclick=()=>{initSceneScript();$('#luaEditor').value=data.script;toast('Plantilla restaurada');};}
-  else if(tab==='transform'){body.innerHTML='<div class="drawer-inner"><h3>↗　GIZMOS 3D · ARRASTRA LOS EJES</h3><div class="action-row axis-buttons"><button data-mode="move">↔</button><button data-mode="rotate">⟳</button><button data-mode="scale">□</button><span class="hint">Toca y arrastra un eje coloreado del gizmo en el visor.</span></div><div class="action-row"><button class="small-btn" data-axis="x">X +</button><button class="small-btn" data-axis="y">Y +</button><button class="small-btn" data-axis="z">Z +</button><button class="small-btn" data-axis="-x">X −</button><button class="small-btn" data-axis="-y">Y −</button><button class="small-btn" data-axis="-z">Z −</button></div></div>';body.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-mode]').forEach(x=>x.classList.remove('active'));b.classList.add('active');setGizmoMode(b.dataset.mode);toast('Gizmo: '+b.dataset.mode);});body.querySelectorAll('[data-axis]').forEach(b=>b.onclick=()=>applyAxisStep(b.dataset.axis));}
-  else if(tab==='hud'){body.innerHTML='<div class="drawer-inner"><h3>▦　HUD MÓVIL</h3><div class="lua-safe">Joystick a la izquierda · salto/acción a la derecha · espacio seguro para cámara.</div><div class="hud-preview"><div class="stick" data-hud="stick"><div class="stick-knob"></div></div><div class="run-buttons"><button data-hud="jump">↑</button><button data-hud="action">●</button></div></div><div class="action-row"><button id="resetHud" class="small-btn">Restablecer vista previa</button></div></div>';enableHudMove();$('#resetHud').onclick=()=>openDrawer('hud');}
-  else {body.innerHTML='<div class="drawer-inner"><h3>◈　ESCENA Y NODOS</h3><div class="action-row"><button class="small-btn" id="addCube">＋ Cubo</button><button class="small-btn" id="addSphere">＋ Esfera</button><button class="small-btn" id="addLight">☼ Luz</button></div><div class="hint">Toca un objeto para seleccionarlo; arrastra fuera del gizmo para orbitar. Pellizca para zoom.</div></div>';$('#addCube').onclick=()=>addPrimitive('Box');$('#addSphere').onclick=()=>addPrimitive('Sphere');$('#addLight').onclick=()=>{const l=new THREE.PointLight(0x9cf7e0,14,9);l.position.set(1,3,1);l.name='Luz puntual';state.scene.add(l);const m=makeNode('Marcador de luz','Sphere',[1,3,1],0x9cf7e0);m.scale.setScalar(.16);selectObject(m);toast('Luz puntual agregada');};}
+  if(tab==='script'){body.innerHTML='<div class="drawer-inner"><h3>Script · Lua</h3><textarea class="codebox" id="luaEditor" spellcheck="false"></textarea><div class="action-row"><button id="runLua" class="small-btn accent">▶ Ejecutar script</button><button id="resetLua" class="small-btn">Restaurar plantilla</button><span id="luaResult" class="lua-result"></span></div></div>';$('#luaEditor').value=data.script;$('#luaEditor').oninput=e=>data.script=e.target.value;$('#runLua').onclick=runLua;$('#resetLua').onclick=()=>{initSceneScript();$('#luaEditor').value=data.script;toast('Plantilla restaurada');};}
+  else if(tab==='transform'){d.classList.remove('open');return;}
+  else if(tab==='hud'){body.innerHTML='<div class="drawer-inner"><h3>HUD</h3><div class="hud-preview"><div class="stick" data-hud="stick"><div class="stick-knob"></div></div><div class="run-buttons"><button data-hud="jump">↑</button><button data-hud="action">●</button></div></div><div class="action-row"><button id="resetHud" class="small-btn">Restablecer</button></div></div>';enableHudMove();$('#resetHud').onclick=()=>openDrawer('hud');}
+  else {d.classList.remove('open');return;}
 }
 function initSceneScript(){data.script=data.project==='fps'?'-- FPS Starter · Lua\nfunction start()\n print("FPS listo")\nend\nfunction update(dt)\n -- lógica de movimiento\nend\nstart()':'-- Starter · Lua\nfunction start()\n print("Proyecto iniciado")\nend\nfunction update(dt)\n -- lógica del juego\nend\nstart()';}
 function applyAxisStep(key){if(!data.selected)return;const sign=key.startsWith('-')?-1:1,axis=key.replace('-',''),o=data.selected;if(data.mode==='move')o.position[axis]+=sign*.25;else if(data.mode==='rotate')o.rotation[axis]+=sign*.2;else o.scale[axis]=Math.max(.05,o.scale[axis]+sign*.1);updateInspector();syncGizmo();}

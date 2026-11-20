@@ -1,6 +1,6 @@
 {
   "name": "mobiforge-engine",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "private": true,
   "type": "module",
   "scripts": {"dev":"vite --host 0.0.0.0", "build":"vite build", "android:sync":"cap sync android"},
