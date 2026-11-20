@@ -40,7 +40,7 @@ public class AppUpdaterPlugin extends Plugin {
                 connection.setInstanceFollowRedirects(true);
                 connection.connect();
                 String host = connection.getURL().getHost();
-                if (!(host.equals("github.com") || host.endsWith(".githubusercontent.com"))) {
+                if (!(host.equals("github.com") || host.equals("release-assets.githubusercontent.com") || host.endsWith(".githubusercontent.com"))) {
                     throw new SecurityException("Host de descarga no permitido");
                 }
                 int length = connection.getContentLength();

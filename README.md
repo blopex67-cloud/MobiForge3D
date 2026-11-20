@@ -1,4 +1,4 @@
-# MobiForge 3D v0.1.7
+# MobiForge 3D v0.1.8
 
 Editor 3D móvil horizontal con visor central, árbol padre/hijo, inspector y controles de transformación.
 
@@ -12,7 +12,7 @@ Editor 3D móvil horizontal con visor central, árbol padre/hijo, inspector y co
 - Actualizador integrado: comprueba el último release, descarga el APK y abre el instalador de Android. Android conserva su confirmación obligatoria.
 
 ## Actualización
-La v0.1.7 conserva la clave de firma estable configurada para la v0.1.6, por lo que Android permite instalar la actualización desde la app. Tras aceptar el permiso de instalar desde MobiForge (si lo solicita), se comprueba al abrir y también desde el icono de actualización.
+La v0.1.8 conserva la clave de firma estable configurada para la v0.1.6, por lo que Android permite instalar la actualización desde la app. Tras aceptar el permiso de instalar desde MobiForge (si lo solicita), se comprueba al abrir y también desde el icono de actualización.
 
 ## Build y validación
 CI construye APK de release, lo firma, verifica firma y confirma orientación horizontal en manifiesto fusionado. Esto no sustituye la prueba en teléfono. Física y colisiones todavía son básicas; no equivalen al motor de física de Godot. Para importar GLTF con recursos externos, selecciona todos sus archivos relacionados en el selector múltiple.

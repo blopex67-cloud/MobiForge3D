@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 const AppUpdater = registerPlugin('AppUpdater');
-const APP_VERSION = import.meta.env.VITE_APP_VERSION || '0.1.7';
+const APP_VERSION = import.meta.env.VITE_APP_VERSION || '0.1.8';
 
 const $ = (s) => document.querySelector(s);
 const home = $('#home'), editor = $('#editor'), viewport = $('#viewport');
@@ -218,8 +218,8 @@ const resizeObserver=new ResizeObserver(()=>resizeViewport());resizeObserver.obs
 $('#play').onclick=()=>{if(data.playing)stopGame();else startGame();};$('#pause').onclick=()=>{if(!data.playing){toast('Ejecuta el juego para pausarlo');return;}state.paused=!state.paused;$('#pause').classList.toggle('active',state.paused);$('#bottomStatus').textContent=state.paused?'Juego pausado':'Juego en ejecución';};
 $('#jump').addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();state.jumpQueued=true;});$('#action').addEventListener('pointerdown',e=>e.stopPropagation());$('#action').onclick=()=>toast('Acción del jugador');
 const stick=$('#stick'),knob=$('.stick-knob');let stickId=null,moveVec={x:0,z:0};
-function stickMove(e){const r=stick.getBoundingClientRect(),limit=Math.max(1,r.width*.31);let x=e.clientX-r.left-r.width/2,y=e.clientY-r.top-r.height/2,m=Math.min(limit,Math.hypot(x,y)),a=Math.atan2(y,x);x=Math.cos(a)*m;y=Math.sin(a)*m;knob.style.transform=`translate(${x}px,${y}px)`;moveVec.x=x/limit;moveVec.z=y/limit;}
-stick.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();stickId=e.pointerId;stick.setPointerCapture(e.pointerId);stickMove(e);});stick.addEventListener('pointermove',e=>{if(stickId===e.pointerId)stickMove(e);});stick.addEventListener('pointerup',e=>{e.stopPropagation();stickId=null;moveVec={x:0,z:0};knob.style.transform='';});stick.addEventListener('pointercancel',()=>{stickId=null;moveVec={x:0,z:0};knob.style.transform='';});
+function stickMove(e){const r=stick.getBoundingClientRect(),limit=Math.max(1,r.width*.31);let x=e.clientX-r.left-r.width/2,y=e.clientY-r.top-r.height/2,m=Math.min(limit,Math.hypot(x,y)),a=Math.atan2(y,x);x=Math.cos(a)*m;y=Math.sin(a)*m;knob.style.transform=`translate(calc(-50% + ${x}px),calc(-50% + ${y}px))`;moveVec.x=x/limit;moveVec.z=y/limit;}
+stick.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();stickId=e.pointerId;stick.setPointerCapture(e.pointerId);stickMove(e);});stick.addEventListener('pointermove',e=>{if(stickId===e.pointerId)stickMove(e);});stick.addEventListener('pointerup',e=>{e.stopPropagation();stickId=null;moveVec={x:0,z:0};knob.style.transform='translate(-50%,-50%)';});stick.addEventListener('pointercancel',()=>{stickId=null;moveVec={x:0,z:0};knob.style.transform='translate(-50%,-50%)';});
 document.querySelectorAll('.tool').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tool').forEach(x=>x.classList.remove('active'));b.classList.add('active');data.tab=b.dataset.tab;if(data.tab==='scene')$('#drawer').classList.remove('open');else openDrawer(data.tab);});
 document.querySelectorAll('.gizmo-mode').forEach(b=>b.onclick=()=>{document.querySelectorAll('.gizmo-mode').forEach(x=>x.classList.toggle('active',x===b));setGizmoMode(b.dataset.mode);});
 async function checkForUpdate(automatic=false){
