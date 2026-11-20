@@ -26,13 +26,13 @@ jobs:
         run: npm install
       - name: Build web app
         env:
-          VITE_APP_VERSION: 0.1.9
+          VITE_APP_VERSION: 0.1.10
         run: npm run build
       - name: Generate Android wrapper
         run: npx cap add android
       - name: Add native in-app updater and version code
         env:
-          APP_VERSION: 0.1.9
+          APP_VERSION: 0.1.10
         run: |
           mkdir -p android/app/src/main/java/com/blopex/mobiforge3d android/app/src/main/res/xml
           cp android-native/AppUpdaterPlugin.java android/app/src/main/java/com/blopex/mobiforge3d/
@@ -150,16 +150,16 @@ jobs:
       - name: Publish APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MobiForge3D-v0.1.9-signed-APK
+          name: MobiForge3D-v0.1.10-signed-APK
           path: android/app/build/outputs/apk/release/MobiForge3D.apk
           if-no-files-found: error
           retention-days: 30
       - name: Publish public APK release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.1.9
-          name: MobiForge 3D v0.1.9 (escenas, scripts y cámara)
-          body: 'Editor Script centrado y script por objeto en Inspector (sin nodo Script en el árbol); cámara desacoplada del gizmo y encuadre de escenarios GLB/GLTF; apartado Escenas para abrir, insertar y guardar escenas; outline seleccionable; controles sin función retirados. APK firmado y orientación horizontal verificados en CI; no sustituye una prueba táctil en dispositivo.'
+          tag_name: v0.1.10
+          name: MobiForge 3D v0.1.10 (Lua, GLSL e importación de escenas)
+          body: 'Editor único de código en modo Script: runtime Lua, shader GLSL Vertex/Fragment e imágenes como texturas; código vinculado al objeto, sin editor en Inspector. Selección táctil de objetos corregida, selección de texto de HUD deshabilitada excepto en el código. Escenas creadas y guardadas separadas por proyecto con abrir/insertar; selector de nodos 3D estilo Godot. Física de cuerpos/colisionadores sigue siendo marcador, no motor físico. APK firmado, compilación y orientación landscape verificados en CI; no sustituye prueba visual en dispositivo.'
           files: android/app/build/outputs/apk/release/MobiForge3D.apk
           make_latest: true
           fail_on_unmatched_files: true

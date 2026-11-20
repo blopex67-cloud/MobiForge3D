@@ -1,18 +1,22 @@
-# MobiForge 3D v0.1.9
+# MobiForge 3D v0.1.10
 
-Editor táctil de juegos 3D en horizontal, con viewport, árbol de nodos, inspector y controles de transformación.
+Editor táctil de juegos 3D Android horizontal.
 
-## Esta versión
-- Eliminé el botón de script hijo y el control de acción sin función. Ya no se crean nodos Script ni aparecen en el árbol.
-- El script Lua pertenece al objeto: se edita desde su Inspector y, al entrar en el modo Script, aparece un editor centrado sobre el visor. Ambos editores sincronizan el mismo texto.
-- Separé el punto de enfoque de la cámara del transform del objeto. Mover/rotar/escalar con gizmos no arrastra el encuadre; los gestos de órbita y paneo mueven ese punto de forma independiente.
-- Al importar GLB/GLTF centro el escenario, ajusto su escala cuando es desmesurada y encuadro la cámara según sus límites. Rechazo archivos con dimensiones fuera de rango y limpio gestos antiguos al cambiar/importar escena.
-- Añadí outline de forma seleccionable, activado inicialmente.
-- La pestaña Escenas permite abrir FPS/TPS y escenas de prueba, insertar escenas de prueba en el proyecto, y abrir o borrar escenas guardadas. Guardar escena crea un registro recuperable en este dispositivo. Los GLB/GLTF no se incrustan en el guardado: se indican para reimportarlos al abrirlo.
-- Quité la pestaña Nodo inactiva, el icono de Vista sin acción, el botón de acción vacío y el panel de importación duplicado.
+## Código del objeto
+- El código se edita solamente en el modo **Script**, en el panel centrado sobre el visor. El Inspector no contiene editor de código.
+- **Lua:** runtime embebido con la API de objetos de MobiForge (`move`, `set_position`, `rotate`, `set_scale`). No ejecuta JavaScript, Python ni código nativo; usa un entorno controlado.
+- **GLSL:** el modo shader admite fragmentos para el material estándar y shaders completos de fragmento, además de una etapa Vertex personalizable. El shader debe ser GLSL compatible con WebGL/Three.js, no cualquier lenguaje o formato de shader.
+- **Imágenes:** selecciona una imagen para aplicarla como textura al objeto. Imágenes pequeñas (hasta 1 MB) se guardan dentro de las escenas guardadas; otras imágenes deben volver a importarse.
+- La edición de Lua y shaders permanece asociada al objeto seleccionado. La interfaz evita selección accidental de texto; los dos campos de código sí permiten seleccionar/copiar.
 
-## Actualizaciones
-El actualizador busca Releases, descarga el APK firmado y abre el instalador Android; el sistema pide confirmar la instalación. La clave de firma se mantiene para actualizaciones compatibles.
+## Escenas y nodos
+- La pestaña Escenas lista solo escenas guardadas en el proyecto actual. Puedes crear una escena, abrirla, insertarla o borrarla.
+- Añadir nodo muestra un selector filtrable con nodos 3D comunes de estilo Godot: malla, cuerpos, colisión, cámaras y luces.
+- Cuerpos y colisionadores son marcadores de jerarquía/forma; todavía no constituyen un motor de colisiones o dinámica.
+- La selección del viewport se procesa al tocar el objeto, además del árbol.
+
+## Guardados y formatos
+Las escenas se guardan localmente por proyecto. GLB/GLTF grandes no se incrustan; el guardado conserva sus nombres y pide reimportarlos al abrir. GLSL se ejecuta en la GPU mediante el shader/material de Three.js.
 
 ## Validación
-`node --check` y el bundle del código de navegador con esbuild pasan. El build local de Vite no pudo reservar memoria WebAssembly en este entorno; el build de Android en CI y la firma aún deben confirmarse para esta versión. No es una prueba táctil ni visual en un Android físico.
+La sintaxis JS y las referencias estáticas se revisaron. El build de Android, firma y orientación horizontal se deben verificar en CI para v0.1.10; esto no equivale a prueba visual/táctil en dispositivo.
