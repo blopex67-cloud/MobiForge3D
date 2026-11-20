@@ -1,0 +1,50 @@
+name: Build Android APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+  actions: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install dependencies
+        run: npm install
+      - name: Build mobile web engine
+        run: npm run build
+      - name: Generate Android wrapper
+        run: npx cap add android
+      - name: Sync and compile debug APK
+        run: |
+          npx cap sync android
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+      - name: Publish APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MobiForge3D-debug-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish public APK release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.1.0
+          name: MobiForge 3D v0.1.0 (prototipo)
+          body: 'Primera versión Android: editor 3D, nodos, transformaciones, scripts Lua y starters FPS/TPS. APK de depuración; prueba inicial, no publicación de producción.'
+          files: android/app/build/outputs/apk/debug/app-debug.apk
+          make_latest: true
+          fail_on_unmatched_files: true
