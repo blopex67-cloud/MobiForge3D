@@ -1,18 +1,20 @@
-# MobiForge 3D
+# MobiForge 3D v0.1.3
 
-Prototipo de motor/editor de juegos pensado para crear desde un teléfono Android en orientación horizontal. App Capacitor con escena 3D Three.js y runtime Lua Fengari.
+Editor Android en horizontal, creado con Capacitor, Three.js y runtime Lua aislado.
 
-## Incluye en v0.1
-- Pantalla de proyectos con plantillas **First Person Starter (FPS)** y **Third Person Starter (TPS)**, y creación de proyectos propios.
-- Viewport 3D táctil: selección por toque, órbita, zoom y selección de nodos.
-- Árbol de escena con nodos básicos; inspector para posición, rotación y escala.
-- Gizmos mediante modos mover/rotar/escalar y controles de ejes.
-- Editor y ejecución de Lua embebido, con salida de `print()`.
-- Modo Jugar con joystick virtual, giro táctil de cámara, cámara en primera/tercera persona y botones de salto/acción.
-- Vista previa de HUD con elementos arrastrables y guardado local del estado de escena.
+## Mejoras de esta auditoría
+- Gizmos 3D reales de traslación, rotación y escala por eje; hit targets táctiles amplios, raycast prioritario y órbita bloqueada durante la manipulación.
+- Tamaño visual del gizmo compensado según distancia de cámara y alto del viewport.
+- Zoom con dos dedos, canvas actualizado con `ResizeObserver`, cambios de orientación y área visible; manifest Android principal y manifest mergeado validados como `landscape` en CI.
+- Render solo mientras el editor está activo; DPR limitado a 1.25, sombras de 512 px y liberación de geometrías/contexto al cambiar de escena.
+- Lua ejecutado en Web Worker sin acceso a `os`, `io`, `debug` ni `package`; se cancela tras 1.5 s para evitar congelar el hilo de la interfaz.
+- Preserva proyectos de inicio FPS/TPS, inspector, jerarquía, HUD y herramientas de escena.
 
-## Desarrollo
-Requiere Node.js 20+ y Android SDK/JDK 21 para Android.
+## APK
+El workflow de GitHub Actions construye un APK debug, lo publica como artifact y crea una Release pública al actualizar `main`. Un build exitoso confirma el empaquetado y la orientación del manifest mergeado; no equivale a probar gestos o rendimiento en un teléfono físico.
+
+## Build local
+Requiere Node.js 20+ y Android SDK/JDK 21.
 
 ```sh
 npm install
@@ -22,10 +24,5 @@ npx cap sync android
 cd android && ./gradlew assembleDebug
 ```
 
-En GitHub Actions se compila el APK debug al hacer push a `main` o al ejecutar manualmente `Build Android APK`. Se publica como artifact y como release pública.
-
-## Corrección v0.1.1
-Se protege el bucle de renderizado hasta inicializar el viewport, evitando un fallo de arranque, y el workflow fuerza `screenOrientation="landscape"` en Android.
-
-## Alcance y límites conocidos
-Esto es una **primera base funcional**, no un reemplazo completo de Godot. El editor Lua tiene runtime embebido, pero todavía no ofrece API Lua para controlar nodos; el movimiento FPS/TPS es una demo con geometría básica, no un juego completo con colisiones o importación de assets. Los cambios de escena se guardan localmente en el dispositivo. El APK de Actions es debug y no está firmado para Play Store.
+## Limitaciones actuales
+Prototipo inicial, no reemplazo completo de Godot. La demo no implementa colisiones completas, importación GLB ni API Lua para editar nodos; la escena se guarda localmente y el APK debug no es de Play Store.

@@ -6,6 +6,9 @@ on:
 permissions:
   contents: write
   actions: read
+concurrency:
+  group: mobiforge-android-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -21,11 +24,11 @@ jobs:
       - uses: android-actions/setup-android@v4
       - name: Install dependencies
         run: npm install
-      - name: Build mobile web engine
+      - name: Build web app
         run: npm run build
       - name: Generate Android wrapper
         run: npx cap add android
-      - name: Sync, set landscape and compile APK
+      - name: Set launcher to landscape and compile APK
         run: |
           npx cap sync android
           python3 - <<'PY'
@@ -40,8 +43,8 @@ jobs:
           for activity in root.findall('.//activity'):
               for intent in activity.findall('intent-filter'):
                   actions = [e.get(ns + 'name') for e in intent.findall('action')]
-                  cats = [e.get(ns + 'name') for e in intent.findall('category')]
-                  if 'android.intent.action.MAIN' in actions and 'android.intent.category.LAUNCHER' in cats:
+                  categories = [e.get(ns + 'name') for e in intent.findall('category')]
+                  if 'android.intent.action.MAIN' in actions and 'android.intent.category.LAUNCHER' in categories:
                       launcher = activity
                       break
               if launcher is not None:
@@ -51,25 +54,56 @@ jobs:
           launcher.set(ns + 'screenOrientation', 'landscape')
           tree.write(path, encoding='utf-8', xml_declaration=True)
           root = ET.parse(path).getroot()
-          assert launcher.get(ns + 'screenOrientation') == 'landscape'
-          print('Verified launcher orientation:', launcher.get(ns + 'screenOrientation'))
+          for activity in root.findall('.//activity'):
+              for intent in activity.findall('intent-filter'):
+                  actions = [e.get(ns + 'name') for e in intent.findall('action')]
+                  categories = [e.get(ns + 'name') for e in intent.findall('category')]
+                  if 'android.intent.action.MAIN' in actions and 'android.intent.category.LAUNCHER' in categories:
+                      assert activity.get(ns + 'screenOrientation') == 'landscape'
+                      print('Verified source launcher orientation:', activity.get(ns + 'screenOrientation'))
           PY
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
+      - name: Verify merged Android manifest is landscape
+        run: |
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          ns = '{http://schemas.android.com/apk/res/android}'
+          root = Path('android/app/build/intermediates')
+          manifests = [p for p in root.rglob('AndroidManifest.xml') if 'merged_manifest' in str(p) or 'merged_manifests' in str(p)]
+          if not manifests:
+              raise SystemExit('ERROR: no merged Android manifest produced')
+          checked = False
+          for path in manifests:
+              doc = ET.parse(path).getroot()
+              for activity in doc.findall('.//activity'):
+                  for intent in activity.findall('intent-filter'):
+                      actions = [e.get(ns + 'name') for e in intent.findall('action')]
+                      categories = [e.get(ns + 'name') for e in intent.findall('category')]
+                      if 'android.intent.action.MAIN' in actions and 'android.intent.category.LAUNCHER' in categories:
+                          orientation = activity.get(ns + 'screenOrientation')
+                          print(f'{path}: launcher orientation={orientation}')
+                          if orientation != 'landscape':
+                              raise SystemExit('ERROR: merged launcher is not landscape')
+                          checked = True
+          if not checked:
+              raise SystemExit('ERROR: merged manifest has no launcher activity')
+          PY
       - name: Publish APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MobiForge3D-v0.1.2-landscape-debug-APK
+          name: MobiForge3D-v0.1.3-debug-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
       - name: Publish public APK release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.1.2
-          name: MobiForge 3D v0.1.2 (horizontal verificado)
-          body: 'El build valida que la actividad principal de Android esté en landscape. APK debug; prototipo inicial.'
+          tag_name: v0.1.3
+          name: MobiForge 3D v0.1.3 (móvil + gizmos 3D)
+          body: 'Auditoría móvil: gizmos 3D táctiles por eje, bloqueo de cámara durante manipulación, escala visual constante, zoom pinch, resize/safe areas, Lua en worker con tiempo límite y manifiesto mergeado validado en landscape. Build debug; falta prueba física en Android.'
           files: android/app/build/outputs/apk/debug/app-debug.apk
           make_latest: true
           fail_on_unmatched_files: true
