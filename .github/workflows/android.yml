@@ -26,13 +26,13 @@ jobs:
         run: npm install
       - name: Build web app
         env:
-          VITE_APP_VERSION: 0.1.6
+          VITE_APP_VERSION: 0.1.7
         run: npm run build
       - name: Generate Android wrapper
         run: npx cap add android
       - name: Add native in-app updater and version code
         env:
-          APP_VERSION: 0.1.6
+          APP_VERSION: 0.1.7
         run: |
           mkdir -p android/app/src/main/java/com/blopex/mobiforge3d android/app/src/main/res/xml
           cp android-native/AppUpdaterPlugin.java android/app/src/main/java/com/blopex/mobiforge3d/
@@ -150,16 +150,16 @@ jobs:
       - name: Publish APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MobiForge3D-v0.1.6-signed-APK
+          name: MobiForge3D-v0.1.7-signed-APK
           path: android/app/build/outputs/apk/release/MobiForge3D.apk
           if-no-files-found: error
           retention-days: 30
       - name: Publish public APK release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.1.6
-          name: MobiForge 3D v0.1.6 (visor amplio y actualización integrada)
-          body: 'HUD compacto con visor ampliado, herramientas de transformación por iconos locales, búsqueda automática de actualizaciones firmadas y confirmación de Android al instalar. Primera instalación con firma estable; la v0.1.5 requiere sustituirse manualmente una vez.'
+          tag_name: v0.1.7
+          name: MobiForge 3D v0.1.7 (play, scripts hijos e importación)
+          body: 'Correcciones de ejecución y restauración de transforms; movimiento con fricción, gravedad y salto; scripts Lua hijos con API de transformación; importación GLB/GLTF con recursos; árbol padre/hijo; HUD ajustado a pantalla; firma estable y orientación horizontal.'
           files: android/app/build/outputs/apk/release/MobiForge3D.apk
           make_latest: true
           fail_on_unmatched_files: true

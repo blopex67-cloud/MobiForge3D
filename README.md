@@ -1,17 +1,18 @@
-# MobiForge 3D v0.1.6
+# MobiForge 3D v0.1.7
 
-Prototipo Android horizontal de editor 3D móvil. Interfaz compacta con visor central amplio, árbol de escena, inspector, Lua y herramientas de transformación.
+Editor 3D móvil horizontal con visor central, árbol padre/hijo, inspector y controles de transformación.
 
-## Mejoras recientes
-- HUD más bajo, paneles laterales estrechos y panel Lua/HUD que no tapa la mayor parte del visor.
-- Se quitó el botón inferior redundante de gizmos: mover, rotar y escalar se seleccionan con iconos en la barra del visor.
-- Iconos SVG Lucide incluidos localmente.
-- El botón de actualización y la comprobación al abrir consultan el último Release público. Si existe una versión nueva, la app descarga el APK y abre el instalador Android; Android exige que la persona confirme. La primera vez puede pedir permiso para instalar apps de esta fuente.
-- APK firmado con clave estable y `versionCode` creciente para permitir actualizaciones sucesivas dentro de Android.
-- Orientación horizontal validada en el manifiesto combinado.
+## Cambios de esta versión
+- Al ejecutar se guarda una copia de transforms; detener restaura posición, rotación y escala del árbol.
+- El controlador del jugador aplica movimiento relativo a la cámara, aceleración/fricción, gravedad, suelo, salto y cámara FPS/TPS.
+- Cada objeto puede tener nodos de script Lua hijos. El árbol muestra el nombre y el padre; el inspector edita transforms del objeto al seleccionar su script.
+- El editor de script permite `start`, `update(dt)`, `move(x,y,z)`, `set_position(x,y,z)`, `rotate(x,y,z)` y `set_scale(x,y,z)`.
+- Importación desde Android de GLB/GLTF; para GLTF externo selecciona junto al modelo sus archivos `.bin` y texturas en el mismo diálogo. Los recursos cargados se guardan durante la sesión y se liberan al cambiar escena.
+- Retiré pestañas de ejemplo vacías y la barra inferior Script/HUD; el HUD de juego usa controles dentro de los límites y áreas seguras.
+- Actualizador integrado: comprueba el último release, descarga el APK y abre el instalador de Android. Android conserva su confirmación obligatoria.
 
-## Importante para instalar
-La v0.1.5 se firmó con una clave temporal de CI; Android no acepta instalar sobre ella una APK con la nueva clave estable. Para pasar a v0.1.6 hay que reemplazar la instalación anterior una vez; después, la app avisa y prepara futuras actualizaciones sin buscar ni descargar el APK manualmente. Android siempre muestra su confirmación de instalación: una app normal no puede actualizarse en silencio.
+## Actualización
+La v0.1.7 conserva la clave de firma estable configurada para la v0.1.6, por lo que Android permite instalar la actualización desde la app. Tras aceptar el permiso de instalar desde MobiForge (si lo solicita), se comprueba al abrir y también desde el icono de actualización.
 
-## Alcance
-Build, firma y orientación pueden verificarse en CI; aún hace falta probar el encuadre y los controles en un teléfono real. Prototipo: no reemplaza Godot ni incluye todavía importación GLB o colisiones completas. La distribución actual es APK, no Play Store.
+## Build y validación
+CI construye APK de release, lo firma, verifica firma y confirma orientación horizontal en manifiesto fusionado. Esto no sustituye la prueba en teléfono. Física y colisiones todavía son básicas; no equivalen al motor de física de Godot. Para importar GLTF con recursos externos, selecciona todos sus archivos relacionados en el selector múltiple.

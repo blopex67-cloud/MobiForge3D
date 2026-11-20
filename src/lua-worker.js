@@ -1,22 +1,13 @@
 import { lua, lauxlib, lualib, to_luastring, to_jsstring } from 'fengari';
 
-self.onmessage = ({data}) => {
-  const output=[]; let L=null;
-  try {
-    L=lauxlib.luaL_newstate(); lualib.luaL_openlibs(L);
-    // The runtime cannot access operating-system, filesystem, package-loading or debug APIs.
-    for(const name of ['os','io','debug','package']) { lua.lua_pushnil(L); lua.lua_setglobal(L,to_luastring(name)); }
-    lua.lua_pushjsfunction(L,(state)=>{
-      const n=lua.lua_gettop(state), parts=[];
-      for(let i=1;i<=n;i++) { const s=lua.lua_tostring(state,i); parts.push(s?to_jsstring(s):'nil'); }
-      output.push(parts.join('\t')); return 0;
-    });
-    lua.lua_setglobal(L,to_luastring('print'));
-    let status=lauxlib.luaL_loadstring(L,to_luastring(String(data?.source||'')));
-    if(status===lua.LUA_OK) status=lua.lua_pcall(L,0,lua.LUA_MULTRET,0);
-    if(status!==lua.LUA_OK) {
-      const err=lua.lua_tostring(L,-1); self.postMessage({error:err?to_jsstring(err):'Error al ejecutar Lua'});
-    } else self.postMessage({output:output.join(' | ')});
-  } catch(e) { self.postMessage({error:String(e?.message||e)}); }
-  finally { if(L)lua.lua_close(L); }
-};
+let L=null,persistent=false,output=[];
+function close(){if(L){lua.lua_close(L);L=null;}persistent=false;}
+function reportError(){const err=lua.lua_tostring(L,-1);self.postMessage({type:'error',error:err?to_jsstring(err):'Error al ejecutar Lua'});close();}
+function addFunction(name,fn){lua.lua_pushjsfunction(L,fn);lua.lua_setglobal(L,to_luastring(name));}
+function setup(nodeName){L=lauxlib.luaL_newstate();lualib.luaL_openlibs(L);for(const name of ['os','io','debug','package']){lua.lua_pushnil(L);lua.lua_setglobal(L,to_luastring(name));}
+  addFunction('print',(state)=>{const n=lua.lua_gettop(state),parts=[];for(let i=1;i<=n;i++){const s=lua.lua_tostring(state,i);parts.push(s?to_jsstring(s):'nil');}output.push(parts.join('\t'));return 0;});
+  lua.lua_createtable(L,0,1);lua.lua_pushstring(L,to_luastring(nodeName||'Node3D'));lua.lua_setfield(L,-2,to_luastring('name'));lua.lua_setglobal(L,to_luastring('node'));
+  for(const [name,command] of [['move','move'],['set_position','set_position'],['rotate','rotate'],['set_scale','set_scale']])addFunction(name,(state)=>{const values=[];for(let i=1;i<=3;i++)values.push(lua.lua_tonumber(state,i));self.postMessage({type:'command',command,values});return 0;});
+}
+function run(source,name,keepAlive){close();output=[];persistent=!!keepAlive;try{setup(name);let status=lauxlib.luaL_loadstring(L,to_luastring(String(source||'')));if(status!==lua.LUA_OK)return reportError();status=lua.lua_pcall(L,0,0,0);if(status!==lua.LUA_OK)return reportError();lua.lua_getglobal(L,to_luastring('start'));if(lua.lua_type(L,-1)===lua.LUA_TFUNCTION){status=lua.lua_pcall(L,0,0,0);if(status!==lua.LUA_OK)return reportError();}else lua.lua_pop(L,1);self.postMessage({type:'ready',output:output.join(' | ')});if(!persistent){self.postMessage({type:'done'});close();}}catch(e){self.postMessage({type:'error',error:String(e?.message||e)});close();}}
+self.onmessage=({data})=>{if(data?.type==='run'){run(data.source,data.nodeName,data.persistent);return;}if(data?.type==='update'&&L&&persistent){try{lua.lua_getglobal(L,to_luastring('update'));if(lua.lua_type(L,-1)===lua.LUA_TFUNCTION){lua.lua_pushnumber(L,Math.max(0,Math.min(.1,Number(data.dt)||0)));const status=lua.lua_pcall(L,1,0,0);if(status!==lua.LUA_OK)return reportError();}else lua.lua_pop(L,1);self.postMessage({type:'tick'});}catch(e){self.postMessage({type:'error',error:String(e?.message||e)});close();}return;}if(data?.type==='stop'){close();self.postMessage({type:'done'});}};

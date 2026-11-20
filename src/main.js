@@ -1,8 +1,9 @@
 import './style.css';
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 const AppUpdater = registerPlugin('AppUpdater');
-const APP_VERSION = import.meta.env.VITE_APP_VERSION || '0.1.6';
+const APP_VERSION = import.meta.env.VITE_APP_VERSION || '0.1.7';
 
 const $ = (s) => document.querySelector(s);
 const home = $('#home'), editor = $('#editor'), viewport = $('#viewport');
@@ -11,30 +12,26 @@ const data = {
   playing: false, objects: [], script: '',
 };
 const state = {
-  scene: null, camera: null, renderer: null, raycaster: new THREE.Raycaster(),
+  scene: null, rootNode: null, camera: null, renderer: null, raycaster: new THREE.Raycaster(),
   clock: new THREE.Clock(), gizmo: null, gizmoHandles: [], drag: null,
   activePointers: new Map(), orbit: null, pinch: null, frame: 0, lastFrame: 0,
-  active: false, luaWorker: null, luaTimer: 0,
+  active: false, luaWorker: null, luaTimer: 0, playSnapshot: null, velocity: new THREE.Vector3(), verticalVelocity: 0, grounded: false, paused: false, lastPhysicsUi: 0,
 };
 const COLORS = { x: 0xff626f, y: 0x66e6ae, z: 0x63a9ff };
 const V3 = { x: new THREE.Vector3(1,0,0), y: new THREE.Vector3(0,1,0), z: new THREE.Vector3(0,0,1) };
 const mat = (color, roughness=.6) => new THREE.MeshStandardMaterial({color, roughness, metalness:.03});
 function toast(text) { const el=$('#toast'); el.textContent=text; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),1900); }
 function setWorker() {
-  if (state.luaWorker) state.luaWorker.terminate();
-  state.luaWorker = new Worker(new URL('./lua-worker.js', import.meta.url), {type:'module'});
-  state.luaWorker.onmessage = (e) => {
-    clearTimeout(state.luaTimer); $('#runLua').disabled=false;
-    const msg=e.data || {}; $('#luaResult').textContent=msg.error ? `Error: ${msg.error}` : (msg.output || 'Script ejecutado');
-    toast(msg.error ? `Lua: ${msg.error}` : (msg.output || 'Script Lua ejecutado').slice(0,100));
-  };
-  state.luaWorker.onerror = (e) => { clearTimeout(state.luaTimer); $('#runLua') && ($('#runLua').disabled=false); toast('Error del runtime Lua'); };
+  if(state.luaWorker)state.luaWorker.terminate();
+  state.luaWorker=new Worker(new URL('./lua-worker.js',import.meta.url),{type:'module'});state.luaWaiting=false;
+  state.luaWorker.onmessage=e=>{const msg=e.data||{};if(msg.type==='command'){applyLuaCommand(msg);return;}if(msg.type==='ready'){clearTimeout(state.luaTimer);state.luaWaiting=false;const b=$('#runLua');if(b)b.disabled=false;const result=$('#luaResult');if(result)result.textContent=msg.output||'Script iniciado';if(msg.output)toast(msg.output.slice(0,100));return;}if(msg.type==='tick'){clearTimeout(state.luaTimer);state.luaWaiting=false;return;}if(msg.type==='done'){clearTimeout(state.luaTimer);state.luaWaiting=false;return;}if(msg.type==='error'){clearTimeout(state.luaTimer);state.luaWaiting=false;state.luaLive=false;const b=$('#runLua');if(b)b.disabled=false;const result=$('#luaResult');if(result)result.textContent=`Error: ${msg.error}`;toast(`Lua: ${msg.error}`);state.luaWorker?.terminate();state.luaWorker=null;}};
+  state.luaWorker.onerror=()=>{clearTimeout(state.luaTimer);state.luaWaiting=false;const b=$('#runLua');if(b)b.disabled=false;toast('Error del runtime Lua');state.luaWorker?.terminate();state.luaWorker=null;};
 }
 function materialFor(color) { return mat(color); }
 function makeNode(name,type,pos=[0,0,0],color=0x6ee5cc) {
   const geo=type==='Sphere'?new THREE.SphereGeometry(.6,20,14):type==='Capsule'?new THREE.CapsuleGeometry(.35,.8,5,10):new THREE.BoxGeometry(1,1,1);
   const mesh=new THREE.Mesh(geo,materialFor(color)); mesh.name=name; mesh.position.set(...pos); mesh.castShadow=true; mesh.userData.nodeType=type;
-  state.scene.add(mesh); data.objects.push(mesh); return mesh;
+  const parent=data.selected&&data.selected.userData.nodeType!=='LuaScript'?data.selected:state.rootNode;parent.add(mesh);data.objects.push(mesh);return mesh;
 }
 function setOnTop(obj) { obj.renderOrder=1000; if(obj.material){obj.material.depthTest=false;obj.material.depthWrite=false;} obj.frustumCulled=false; }
 function registerVisual(mesh,mode) { mesh.userData.gizmoVisual=mode; state.gizmo.add(mesh); setOnTop(mesh); }
@@ -62,41 +59,40 @@ function setGizmoMode(mode) {
   if(state.gizmo) { for(const child of state.gizmo.children) if(child.userData.gizmoVisual)child.visible=child.userData.gizmoVisual===mode; state.gizmo.visible=!!data.selected&&!data.playing; }
 }
 function syncGizmo() {
-  if(!state.gizmo||!state.camera||!data.selected)return;
-  state.gizmo.position.copy(data.selected.getWorldPosition(new THREE.Vector3()));
+  if(!state.gizmo)return;if(!state.camera||!data.selected){state.gizmo.visible=false;return;}
+  const target=data.selected.userData.nodeType==='LuaScript'?(data.selected.parent||data.selected):data.selected;
+  state.gizmo.position.copy(target.getWorldPosition(new THREE.Vector3()));
   const rect=viewport.getBoundingClientRect(), dist=Math.max(.1,state.camera.position.distanceTo(state.gizmo.position));
   const worldPerPixel=(2*dist*Math.tan(THREE.MathUtils.degToRad(state.camera.fov*.5)))/Math.max(1,rect.height);
   const size=THREE.MathUtils.clamp(worldPerPixel*82,.32,2.8);
   state.gizmo.scale.setScalar(size); state.gizmo.visible=!data.playing; state.gizmo.updateMatrixWorld(true);
 }
 function disposePreviousScene() {
-  if(state.scene)state.scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){for(const m of Array.isArray(o.material)?o.material:[o.material])m.dispose();}});
+  if(state.scene)state.scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){for(const m of Array.isArray(o.material)?o.material:[o.material])m.dispose();}for(const url of o.userData?.blobUrls||[])URL.revokeObjectURL(url);});
   if(state.renderer){state.renderer.renderLists.dispose();state.renderer.dispose();state.renderer.forceContextLoss();}
 }
 function initScene(which) {
-  disposePreviousScene();
-  data.project=which; data.objects=[]; data.selected=null;
-  state.scene=new THREE.Scene(); state.scene.background=new THREE.Color('#aeb8c0'); state.scene.fog=new THREE.Fog('#777c75',13,42);
-  state.camera=new THREE.PerspectiveCamera(48,1,.1,100); state.camera.position.set(6,5,7);
-  state.renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,powerPreference:'high-performance'});
-  state.renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1.25)); state.renderer.shadowMap.enabled=true; state.renderer.shadowMap.type=THREE.PCFSoftShadowMap; state.renderer.outputColorSpace=THREE.SRGBColorSpace;
-  viewport.replaceChildren(state.renderer.domElement); state.raycaster=new THREE.Raycaster();
-  state.scene.add(new THREE.HemisphereLight(0xb9d9ef,0x243140,2.0));
-  const light=new THREE.DirectionalLight(0xffedcf,2.7); light.position.set(4,8,5); light.castShadow=true; light.shadow.mapSize.set(512,512); state.scene.add(light);
-  const ground=new THREE.Mesh(new THREE.PlaneGeometry(80,80),new THREE.MeshStandardMaterial({color:'#66675f',roughness:.96})); ground.rotation.x=-Math.PI/2; ground.position.y=-.56; ground.receiveShadow=true; ground.name='Suelo'; ground.userData.nodeType='Plane'; state.scene.add(ground); data.objects.push(ground);
-  const grid=new THREE.GridHelper(80,80,'#766f5e','#858273'); grid.position.y=-.55; grid.userData.helper=true; state.scene.add(grid);
-  if(which==='fps') {
-    makeNode('Player (FPS)','Capsule',[0,.1,0],0x55dfc2); makeNode('Caja','Box',[-1.7,.1,-1],0x8578ff); makeNode('Luz','Sphere',[2,.4,-1.5],0xffbf70);
-    data.script='-- FPS Starter · Lua\nfunction start()\n  print("FPS listo")\nend\n\nfunction update(dt)\n  -- lógica de movimiento\nend\n\nstart()'; $('#projectName').textContent='First Person Starter';
-  } else if(which==='tps') {
-    makeNode('Player (TPS)','Capsule',[0,.1,0],0xffb86b); makeNode('Plataforma','Box',[0,-.15,0],0x435d72).scale.set(4,.2,4); makeNode('Punto de cámara','Sphere',[0,2.2,4],0x9b8dff);
-    data.script='-- TPS Starter · Lua\nfunction start()\n  print("TPS listo")\nend\n\nfunction update(dt)\n  -- lógica de cámara\nend\n\nstart()'; $('#projectName').textContent='Third Person Starter';
-  } else {
-    makeNode('Player','Capsule',[0,.1,0],0x55dfc2); makeNode('Cubo','Box',[1,.5,-1],0x8578ff);
-    data.script=`-- ${data.customName||'Mi juego'} · Lua\nfunction start()\n  print("Proyecto iniciado")\nend\n\nfunction update(dt)\n  -- lógica del juego\nend\n\nstart()`; $('#projectName').textContent=data.customName||'Mi juego';
+  disposePreviousScene();data.project=which;data.objects=[];data.selected=null;
+  state.scene=new THREE.Scene();state.scene.background=new THREE.Color('#aeb8c0');state.scene.fog=new THREE.Fog('#777c75',13,42);
+  state.rootNode=new THREE.Group();state.rootNode.name='root';state.rootNode.userData.nodeType='Node3D';state.scene.add(state.rootNode);
+  state.paused=false;state.velocity.set(0,0,0);state.verticalVelocity=0;state.playSnapshot=null;moveVec={x:0,z:0};
+  state.camera=new THREE.PerspectiveCamera(48,1,.1,100);state.camera.position.set(6,5,7);
+  state.renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,powerPreference:'high-performance'});state.renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1.25));state.renderer.shadowMap.enabled=true;state.renderer.shadowMap.type=THREE.PCFSoftShadowMap;state.renderer.outputColorSpace=THREE.SRGBColorSpace;
+  viewport.replaceChildren(state.renderer.domElement);state.raycaster=new THREE.Raycaster();
+  state.scene.add(new THREE.HemisphereLight(0xb9d9ef,0x243140,2));const light=new THREE.DirectionalLight(0xffedcf,2.7);light.position.set(4,8,5);light.castShadow=true;light.shadow.mapSize.set(512,512);state.scene.add(light);
+  const ground=new THREE.Mesh(new THREE.PlaneGeometry(80,80),new THREE.MeshStandardMaterial({color:'#66675f',roughness:.96}));ground.rotation.x=-Math.PI/2;ground.position.y=-.56;ground.receiveShadow=true;ground.name='Suelo';ground.userData.nodeType='Plane';state.rootNode.add(ground);data.objects.push(ground);
+  state.grid=new THREE.GridHelper(80,80,'#766f5e','#858273');state.grid.position.y=-.55;state.grid.userData.helper=true;state.scene.add(state.grid);
+  if(which==='fps'){
+    makeNode('Player (FPS)','Capsule',[0,.19,0],0x55dfc2);makeNode('Caja','Box',[-1.7,.1,-1],0x8578ff);makeNode('Luz','Sphere',[2,.4,-1.5],0xffbf70);$('#projectName').textContent='First Person Starter';
+  }else if(which==='tps'){
+    makeNode('Player (TPS)','Capsule',[0,.70,0],0xffb86b);makeNode('Plataforma','Box',[0,-.15,0],0x435d72).scale.set(4,.2,4);makeNode('Punto de cámara','Sphere',[0,2.2,4],0x9b8dff);$('#projectName').textContent='Third Person Starter';
+  }else{
+    makeNode('Player','Capsule',[0,.19,0],0x55dfc2);makeNode('Cubo','Box',[1,.5,-1],0x8578ff);$('#projectName').textContent=data.customName||'Mi juego';
   }
-  data.selected=data.objects.find(o=>o.name.startsWith('Player'))||data.objects[1];
-  createGizmo(); state.spherical={theta:.7,phi:1.12,radius:8}; updateTree(); updateInspector(); resizeViewport();
+  const player=data.objects.find(o=>o.name.startsWith('Player'));
+  const starter=`-- Controlador de ${player?.name||'Player'}\n-- Joystick y salto: controlados por el motor.\n-- API: move(x,y,z), set_position(x,y,z), rotate(x,y,z), set_scale(x,y,z).\nfunction start()\n  print("Controlador listo: " .. node.name)\nend\nfunction update(dt)\n  -- Ejemplo: move(0, 0, -1 * dt)\nend`;
+  data.script=starter;if(player)createScriptChild(player,starter,false);
+  data.selected=player||data.objects.find(o=>!o.userData.helper);createGizmo();state.spherical={theta:.7,phi:1.12,radius:8};updateTree();updateInspector();resizeViewport();
 }
 function resizeViewport() {
   if(!state.renderer||!state.camera)return;
@@ -119,40 +115,63 @@ function updateCamera() {
 function tick(time=0) {
   state.frame=0; if(!state.active||document.hidden)return;
   if(time-state.lastFrame<1000/60){state.frame=requestAnimationFrame(tick);return;}
-  state.lastFrame=time; const dt=Math.min(state.clock.getDelta(),.04); updateCamera(); syncGizmo();
-  if(data.playing){const p=data.objects.find(o=>o.name.startsWith('Player'));if(p){p.position.x+=moveVec.x*dt*3.2;p.position.z+=moveVec.z*dt*3.2}}
+  state.lastFrame=time; const dt=Math.min(state.clock.getDelta(),.04); if(data.playing&&!state.paused)updatePlayerPhysics(dt); updateCamera(); syncGizmo();
+  if(data.playing&&!state.paused&&state.luaLive&&state.luaWorker&&!state.luaWaiting){state.luaWaiting=true;state.luaTimer=setTimeout(()=>{if(state.luaWaiting){state.luaWorker?.terminate();state.luaWorker=null;state.luaLive=false;state.luaWaiting=false;toast('Lua detenido: excedió el límite por actualización');}},1500);state.luaWorker.postMessage({type:'update',dt});}
   state.renderer?.render(state.scene,state.camera); state.frame=requestAnimationFrame(tick);
 }
 function startRender() { state.active=true; state.clock.start(); if(!state.frame)state.frame=requestAnimationFrame(tick); }
+function startGame(){if(data.playing)return;state.playSnapshot=new Map(data.objects.filter(o=>o.position&&o.quaternion&&o.scale).map(o=>[o,{position:o.position.clone(),quaternion:o.quaternion.clone(),scale:o.scale.clone()}]));data.playing=true;state.paused=false;state.velocity.set(0,0,0);state.verticalVelocity=0;state.grounded=false;state.jumpQueued=false;moveVec={x:0,z:0};state.drag=null;state.orbit=null;$('#runHud').classList.remove('hidden');$('#play').innerHTML='<img src="/icons/player-stop.svg" alt="Detener">';$('#pause').classList.remove('active');$('#fpsLabel').textContent='EJECUTANDO';$('#bottomStatus').textContent='Juego en ejecución';if(!state.frame)startRender();setGizmoMode(data.mode);const player=data.objects.find(o=>o.name.startsWith('Player'));const script=player&&data.objects.find(o=>o.userData.nodeType==='LuaScript'&&o.parent===player);if(script?.userData.scriptText)executeLua(script.userData.scriptText,player,true,true);}
+function stopGame(){if(!data.playing)return;data.playing=false;state.paused=false;if(state.luaWorker){state.luaWorker.terminate();state.luaWorker=null;}state.luaLive=false;clearTimeout(state.luaTimer);state.luaWaiting=false;moveVec={x:0,z:0};state.velocity.set(0,0,0);state.verticalVelocity=0;state.jumpQueued=false;if(state.playSnapshot){for(const [o,t] of state.playSnapshot){o.position.copy(t.position);o.quaternion.copy(t.quaternion);o.scale.copy(t.scale);}state.playSnapshot=null;}$('#runHud').classList.add('hidden');$('#play').innerHTML='<img src="/icons/play.svg" alt="Ejecutar">';$('#pause').classList.remove('active');$('#fpsLabel').textContent='EDITOR';$('#bottomStatus').textContent='Edición · listo';updateTree();updateInspector();updateCamera();syncGizmo();}
+function updatePlayerPhysics(dt){const p=data.objects.find(o=>o.name.startsWith('Player'));if(!p)return;const theta=state.spherical.theta,stickX=THREE.MathUtils.clamp(moveVec.x,-1,1),stickZ=THREE.MathUtils.clamp(moveVec.z,-1,1);const tx=(stickX*Math.cos(theta)+stickZ*Math.sin(theta))*3.6,tz=(-stickX*Math.sin(theta)+stickZ*Math.cos(theta))*3.6,moving=Math.hypot(stickX,stickZ)>.08,blend=1-Math.exp(-(moving?15:8)*dt);state.velocity.x+=(tx-state.velocity.x)*blend;state.velocity.z+=(tz-state.velocity.z)*blend;if(!moving&&Math.hypot(state.velocity.x,state.velocity.z)<.025){state.velocity.x=0;state.velocity.z=0;}p.position.x+=state.velocity.x*dt;p.position.z+=state.velocity.z*dt;let floor=-.56;const platform=data.objects.find(o=>o.name==='Plataforma');if(platform){const hx=Math.abs(platform.scale.x)*.5,hz=Math.abs(platform.scale.z)*.5;if(Math.abs(p.position.x-platform.position.x)<=hx+.3&&Math.abs(p.position.z-platform.position.z)<=hz+.3)floor=Math.max(floor,platform.position.y+Math.abs(platform.scale.y)*.5);}const half=p.userData.nodeType==='Capsule'?.75:.5;if(state.jumpQueued&&state.grounded){state.verticalVelocity=5;state.grounded=false;}state.jumpQueued=false;state.verticalVelocity=Math.max(-18,state.verticalVelocity-14*dt);p.position.y+=state.verticalVelocity*dt;const groundY=floor+half;if(p.position.y<=groundY){p.position.y=groundY;state.verticalVelocity=0;state.grounded=true;}else state.grounded=false;}
 function stopRender() { state.active=false; if(state.frame)cancelAnimationFrame(state.frame);state.frame=0; }
+function nodeDepth(o){let n=0,p=o.parent;while(p&&p!==state.scene){n++;p=p.parent;}return Math.max(0,n-1);}
 function updateTree() {
-  const box=$('#nodeList'); if(!box)return; box.replaceChildren();
-  for(const o of data.objects){ if(o.userData.helper)continue; const d=document.createElement('div'); d.className='node-item'+(o===data.selected?' selected':''); d.textContent=(o.name==='Suelo'?'▱':o.userData.nodeType==='Capsule'?'◉':o.userData.nodeType==='Sphere'?'●':'◧')+'　'+o.name; d.onclick=()=>selectObject(o); box.append(d); }
+  const box=$('#nodeList');if(!box)return;box.replaceChildren();
+  const add=(o,depth)=>{if(o.userData.helper)return;const d=document.createElement('div');d.className='node-item'+(o===data.selected?' selected':'')+(o.userData.nodeType==='LuaScript'?' script-node':'');d.style.paddingLeft=`${5+depth*10}px`;d.title=`${o.name} · Padre: ${o.parent?.name||'root'}`;const icon=o.userData.nodeType==='LuaScript'?'⌘':o.name==='Suelo'?'▱':o.userData.nodeType==='Capsule'?'◉':o.userData.nodeType==='Sphere'?'●':o.userData.nodeType==='GLTF'?'▣':'◧';const name=document.createElement('span');name.textContent=`${icon}　${o.name}`;const parent=document.createElement('small');parent.textContent=`Padre: ${o.parent?.name||'root'}`;d.append(name,parent);d.onclick=()=>selectObject(o);box.append(d);for(const child of o.children)add(child,depth+1);};
+  if(state.rootNode)for(const child of state.rootNode.children)add(child,0);
 }
-function selectObject(o) { data.selected=o; updateTree(); updateInspector(); syncGizmo(); }
+function selectObject(o) { data.selected=o; if(o?.userData.nodeType==='LuaScript')data.script=o.userData.scriptText||''; updateTree(); updateInspector(); syncGizmo(); }
 function vecProp(label,v,key){return `<div class="prop"><label>${label}</label><div class="xyz">${['x','y','z'].map((axis,i)=>`<input type="number" step="0.1" value="${v[axis].toFixed(1)}" data-prop="${key}" data-axis="${i}" aria-label="${axis}">`).join('')}</div></div>`;}
-function updateInspector() {
-  const box=$('#inspectBody'); if(!box||!data.selected){if(box)box.textContent='Selecciona un nodo';return;}
-  const o=data.selected; box.innerHTML=`<div class="inspect-title">${o.name}</div>${vecProp('POSICIÓN',o.position,'pos')}${vecProp('ROTACIÓN',o.rotation,'rot')}${vecProp('ESCALA',o.scale,'scale')}<div class="prop"><label>TIPO DE NODO</label><span style="font-size:10px;color:#50e0c0">${o.userData.nodeType||'Node3D'}</span></div><div class="prop"><button id="deleteNode" class="small-btn">Eliminar nodo</button></div>`;
-  box.querySelectorAll('input').forEach(inp=>inp.onchange=()=>{const v=Number(inp.value),k=inp.dataset.prop,axis=['x','y','z'][Number(inp.dataset.axis)];if(Number.isFinite(v))data.selected[k][axis]=v;syncGizmo();});
-  $('#deleteNode').onclick=()=>{if(o.name==='Suelo'){toast('El suelo es parte del escenario');return;}state.scene.remove(o);data.objects=data.objects.filter(x=>x!==o);selectObject(data.objects.find(x=>x.name.startsWith('Player'))||data.objects[0]);};
+function updateInspector(){
+  const box=$('#inspectBody');if(!box||!data.selected){if(box)box.textContent='Selecciona un nodo';return;}
+  const selected=data.selected,isScript=selected.userData.nodeType==='LuaScript',o=isScript?(selected.parent||selected):selected;
+  const childScripts=data.objects.filter(x=>x.userData.nodeType==='LuaScript'&&x.parent===o);
+  box.innerHTML=`<div class="inspect-title">${selected.name}</div><div class="prop parent-prop"><label>PADRE</label><span>${selected.parent?.name||'root'}</span></div>${vecProp('POSICIÓN',o.position,'pos')}${vecProp('ROTACIÓN',o.rotation,'rot')}${vecProp('ESCALA',o.scale,'scale')}<div class="prop"><label>TIPO DE NODO</label><span class="node-type">${selected.userData.nodeType||'Node3D'}</span></div>${isScript?'<div class="prop"><button id="editChildScript" class="small-btn accent">Abrir script</button></div>':`<div class="prop"><button id="makeChildScript" class="small-btn accent">＋ Script hijo</button>${childScripts.length?`<div class="child-script-list">${childScripts.map((s,i)=>`<button class="child-script" data-script-index="${i}">⌘ ${s.name}</button>`).join('')}</div>`:''}</div>`}<div class="prop"><button id="deleteNode" class="small-btn">Eliminar nodo</button></div>`;
+  box.querySelectorAll('input').forEach(inp=>inp.onchange=()=>{const v=Number(inp.value),k=inp.dataset.prop,axis=['x','y','z'][Number(inp.dataset.axis)];if(Number.isFinite(v))o[k][axis]=v;syncGizmo();});
+  const make=$('#makeChildScript');if(make)make.onclick=()=>{createScriptChild(o);openDrawer('script');};
+  const edit=$('#editChildScript');if(edit)edit.onclick=()=>openDrawer('script');
+  box.querySelectorAll('[data-script-index]').forEach(btn=>btn.onclick=()=>{const scripts=data.objects.filter(x=>x.userData.nodeType==='LuaScript'&&x.parent===o);selectObject(scripts[Number(btn.dataset.scriptIndex)]);openDrawer('script');});
+  $('#deleteNode').onclick=()=>{const victim=selected;if(victim===state.rootNode||victim.name==='Suelo'){toast('No se puede eliminar este nodo');return;}const doomed=[];victim.traverse(n=>{doomed.push(n);for(const url of n.userData?.blobUrls||[])URL.revokeObjectURL(url);});victim.parent?.remove(victim);data.objects=data.objects.filter(x=>!doomed.includes(x));selectObject(data.objects.find(x=>x.name.startsWith('Player'))||data.objects.find(x=>!x.userData.helper)||null);};
 }
+function createScriptChild(parent,source='-- Script del objeto\nfunction start()\n  print("Script listo: " .. node.name)\nend\nfunction update(dt)\nend',select=true){
+  if(parent.userData.nodeType==='LuaScript')parent=parent.parent||state.rootNode;
+  const count=data.objects.filter(o=>o.userData.nodeType==='LuaScript'&&o.parent===parent).length+1;
+  const script=new THREE.Object3D();script.name=count===1?'Script':`Script ${count}`;script.userData.nodeType='LuaScript';script.userData.scriptText=source;parent.add(script);data.objects.push(script);
+  if(select)selectObject(script);else updateTree();return script;
+}
+function ensureScriptForSelected(){let target=data.selected||data.objects.find(o=>o.name.startsWith('Player'))||state.rootNode;if(target.userData.nodeType==='LuaScript')return target;let child=data.objects.find(o=>o.userData.nodeType==='LuaScript'&&o.parent===target);if(!child)child=createScriptChild(target,undefined,false);selectObject(child);return child;}
+function applyLuaCommand(msg){const t=state.luaTarget;if(!t)return;const v=(msg.values||[]).map(Number);if(v.some(x=>!Number.isFinite(x)))return;const [x=0,y=0,z=0]=v;switch(msg.command){case'move':t.position.add(new THREE.Vector3(x,y,z));break;case'set_position':t.position.set(x,y,z);break;case'rotate':t.rotation.x+=x;t.rotation.y+=y;t.rotation.z+=z;break;case'set_scale':t.scale.set(Math.max(.01,x),Math.max(.01,y),Math.max(.01,z));break;}syncGizmo();const now=performance.now();if(data.selected===t&&now-state.lastPhysicsUi>150){state.lastPhysicsUi=now;updateInspector();}}
 function addCustomCard(name) { const card=document.createElement('button');card.className='project-card';card.innerHTML='<div class="thumb tps"><span>3D</span><div class="figure">✦</div></div><b></b><small>Proyecto propio · escena 3D</small><i>ABRIR PROYECTO　›</i>';card.querySelector('b').textContent=name;card.onclick=()=>{data.customName=name;showEditor('custom');};$('.project-grid').append(card); }
 JSON.parse(localStorage.getItem('mf_projects')||'[]').forEach(addCustomCard);
 $('#newProject').onclick=()=>{const n=prompt('Nombre del nuevo proyecto','Mi juego');if(!n)return;const p=JSON.parse(localStorage.getItem('mf_projects')||'[]');if(p.includes(n)){toast('Ya existe ese proyecto');return;}p.push(n);localStorage.setItem('mf_projects',JSON.stringify(p));addCustomCard(n);data.customName=n;showEditor('custom');};
+$('#addChildScript').onclick=()=>{const parent=data.selected?.userData.nodeType==='LuaScript'?data.selected.parent:data.selected;if(!parent){toast('Selecciona primero un objeto');return;}const script=createScriptChild(parent);openDrawer('script');};
+$('#importModel').onclick=()=>$('#modelFile').click();$('#importModelSide').onclick=()=>$('#modelFile').click();
+$('#modelFile').addEventListener('change',async e=>{const files=[...(e.target.files||[])];if(!files.length)return;try{await importModelFiles(files);}catch(err){toast(`Importación falló: ${err.message||err}`);}finally{e.target.value='';}});
+async function importModelFiles(files){const main=files.find(f=>/\.(glb|gltf)$/i.test(f.name));if(!main)throw new Error('Selecciona un modelo GLB o GLTF');if(files.some(f=>f.size>150*1024*1024))throw new Error('Cada archivo debe pesar menos de 150 MB');const urls=[],cache=new Map(),byName=new Map(files.map(f=>[f.name.toLowerCase(),f]));const loader=new GLTFLoader();loader.manager.setURLModifier(request=>{const path=decodeURIComponent(request.split(/[?#]/)[0]),name=path.split('/').pop().toLowerCase(),asset=byName.get(name);if(!asset)return request;if(!cache.has(asset.name)){const url=URL.createObjectURL(asset);cache.set(asset.name,url);urls.push(url);}return cache.get(asset.name);});try{const buffer=await main.arrayBuffer();const gltf=await new Promise((resolve,reject)=>loader.parse(buffer,'',resolve,reject));const model=new THREE.Group();model.name=main.name.replace(/\.(glb|gltf)$/i,'');model.userData.nodeType='GLTF';model.userData.sourceFile=main.name;model.userData.blobUrls=urls;model.add(gltf.scene);model.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});const bounds=new THREE.Box3().setFromObject(model);if(!bounds.isEmpty()){const size=bounds.getSize(new THREE.Vector3()),max=Math.max(size.x,size.y,size.z);if(max>20)model.scale.setScalar(20/max);bounds.setFromObject(model);model.position.y=-.56-bounds.min.y;}state.rootNode.add(model);data.objects.push(model);selectObject(model);updateFileList([...files.map(f=>f.name)]);toast(`Importado: ${model.name}`);}catch(err){urls.forEach(URL.revokeObjectURL);throw err;}}
+function updateFileList(names=[]){const box=$('#fileList');if(!box)return;box.innerHTML='<div>res://</div><div class="file-entry">▸　Scenes</div><div class="file-entry">▸　Scripts</div><div class="file-entry">▾　Assets</div>';for(const name of names){const row=document.createElement('div');row.className='file-entry';row.textContent=`　${name}`;box.append(row);}}
 document.querySelectorAll('.project-card[data-project]').forEach(c=>c.onclick=()=>showEditor(c.dataset.project));
 function showEditor(which) { home.classList.add('hidden');editor.classList.remove('hidden');data.playing=false;$('#runHud').classList.add('hidden');initScene(which);resizeViewport();setWorker();startRender(); }
-$('#back').onclick=()=>{data.playing=false;stopRender();editor.classList.add('hidden');home.classList.remove('hidden');if(state.luaWorker){state.luaWorker.terminate();state.luaWorker=null;}};
-$('#save').onclick=()=>{localStorage.setItem('mf_scene_'+data.project,JSON.stringify({script:data.script,nodes:data.objects.filter(o=>!o.userData.helper).map(o=>({name:o.name,type:o.userData.nodeType,position:o.position.toArray(),rotation:o.rotation.toArray(),scale:o.scale.toArray(),color:o.material?.color?.getHex()}))}));toast('Proyecto guardado en este dispositivo');};
+$('#back').onclick=()=>{if(data.playing)stopGame();stopRender();editor.classList.add('hidden');home.classList.remove('hidden');if(state.luaWorker){state.luaWorker.terminate();state.luaWorker=null;}};
+$('#save').onclick=()=>{localStorage.setItem('mf_scene_'+data.project,JSON.stringify({nodes:data.objects.filter(o=>!o.userData.helper).map(o=>({name:o.name,type:o.userData.nodeType,parent:o.parent?.name||'root',script:o.userData.scriptText||null,sourceFile:o.userData.sourceFile||null,position:o.position.toArray(),rotation:o.rotation.toArray(),scale:o.scale.toArray(),color:o.material?.color?.getHex()}))}));toast('Proyecto guardado en este dispositivo');};
 function addPrimitive(type) { const o=type==='Sphere'?makeNode('Esfera','Sphere',[0,1,0],0x9b8dff):type==='Capsule'?makeNode('Cápsula','Capsule',[0,1,0],0xffb86b):makeNode('Cubo','Box',[0,1,0],0x50e0c0);selectObject(o); }
 $('#addNode').onclick=()=>{const c=prompt('Agregar nodo: cubo, esfera o cápsula','cubo')?.toLowerCase();if(!c)return;addPrimitive(c.includes('esf')?'Sphere':c.includes('caps')||c.includes('cáps')?'Capsule':'Box');};
 function screenOf(world) { const p=world.clone().project(state.camera),r=viewport.getBoundingClientRect();return new THREE.Vector2(r.left+(p.x+1)*r.width/2,r.top+(1-p.y)*r.height/2); }
 function beginGizmoDrag(hit,e) {
-  const {axis,mode}=hit.object.userData.gizmo,o=data.selected,dir=V3[axis].clone(); const center=o.getWorldPosition(new THREE.Vector3());
+  const {axis,mode}=hit.object.userData.gizmo,o=data.selected.userData.nodeType==='LuaScript'?(data.selected.parent||data.selected):data.selected,worldDir=V3[axis].clone(),dir=worldDir.clone();if(o.parent){o.parent.updateWorldMatrix(true,false);dir.applyQuaternion(o.parent.getWorldQuaternion(new THREE.Quaternion()).invert()).normalize();}const center=o.getWorldPosition(new THREE.Vector3());
   const rotBasis=axis==='x'?[new THREE.Vector3(0,1,0),new THREE.Vector3(0,0,1)]:axis==='y'?[new THREE.Vector3(0,0,1),new THREE.Vector3(1,0,0)]:[new THREE.Vector3(1,0,0),new THREE.Vector3(0,1,0)];
-  state.drag={pointerId:e.pointerId,axis,mode,startX:e.clientX,startY:e.clientY,startPosition:o.position.clone(),startScale:o.scale.clone(),startQuaternion:o.quaternion.clone(),center,dir,rotU:rotBasis[0],rotV:rotBasis[1],axisScreen:null,pixelsPerUnit:0,lastAngle:null,totalAngle:0};
-  if(mode==='rotate') {const ray=rayFromPoint(e),plane=new THREE.Plane().setFromNormalAndCoplanarPoint(dir,center),p=new THREE.Vector3();if(ray.intersectPlane(plane,p)){const v=p.sub(center).normalize();state.drag.lastAngle=Math.atan2(v.dot(state.drag.rotV),v.dot(state.drag.rotU));} }
-  if(mode!=='rotate') {const a=screenOf(center),b=screenOf(center.clone().add(dir));const v=b.sub(a);state.drag.pixelsPerUnit=v.length();state.drag.axisScreen=v.length()>3?v.normalize():new THREE.Vector2(0,-1);}
+  state.drag={pointerId:e.pointerId,axis,mode,startX:e.clientX,startY:e.clientY,startPosition:o.position.clone(),startScale:o.scale.clone(),startQuaternion:o.quaternion.clone(),center,dir,worldDir,rotU:rotBasis[0],rotV:rotBasis[1],axisScreen:null,pixelsPerUnit:0,lastAngle:null,totalAngle:0};
+  if(mode==='rotate') {const ray=rayFromPoint(e),plane=new THREE.Plane().setFromNormalAndCoplanarPoint(worldDir,center),p=new THREE.Vector3();if(ray.intersectPlane(plane,p)){const v=p.sub(center).normalize();state.drag.lastAngle=Math.atan2(v.dot(state.drag.rotV),v.dot(state.drag.rotU));} }
+  if(mode!=='rotate') {const a=screenOf(center),b=screenOf(center.clone().add(worldDir));const v=b.sub(a);state.drag.pixelsPerUnit=v.length();state.drag.axisScreen=v.length()>3?v.normalize():new THREE.Vector2(0,-1);}
   e.preventDefault();e.stopPropagation();viewport.setPointerCapture(e.pointerId);state.orbit=null;
 }
 function moveGizmoDrag(e) {
@@ -162,7 +181,7 @@ function moveGizmoDrag(e) {
     if(d.mode==='move')o.position.copy(d.startPosition).addScaledVector(d.dir,amount);
     else {const i=['x','y','z'].indexOf(d.axis);o.scale.copy(d.startScale);o.scale.setComponent(i,THREE.MathUtils.clamp(d.startScale.getComponent(i)+amount,.05,100));}
   } else {
-    const ray=rayFromPoint(e),plane=new THREE.Plane().setFromNormalAndCoplanarPoint(d.dir,d.center),p=new THREE.Vector3();if(!ray.intersectPlane(plane,p))return;
+    const ray=rayFromPoint(e),plane=new THREE.Plane().setFromNormalAndCoplanarPoint(d.worldDir,d.center),p=new THREE.Vector3();if(!ray.intersectPlane(plane,p))return;
     const v=p.sub(d.center).normalize(),angle=Math.atan2(v.dot(d.rotV),v.dot(d.rotU));if(d.lastAngle!==null){let delta=angle-d.lastAngle;if(delta>Math.PI)delta-=Math.PI*2;if(delta< -Math.PI)delta+=Math.PI*2;d.totalAngle+=delta;}d.lastAngle=angle;
     o.quaternion.copy(d.startQuaternion).premultiply(new THREE.Quaternion().setFromAxisAngle(d.dir,d.totalAngle));
   }
@@ -175,7 +194,7 @@ function endPointer(e) {
   const orb=state.orbit;state.orbit=null;if(!orb||data.playing)return;
   const dist=Math.hypot(e.clientX-orb.startX,e.clientY-orb.startY);if(dist>9)return;
   state.raycaster.setFromCamera(pointToNdc(e),state.camera);
-  const hits=state.raycaster.intersectObjects(data.objects.filter(o=>!o.userData.helper),false);if(hits.length)selectObject(hits[0].object);
+  const hits=state.raycaster.intersectObjects(data.objects.filter(o=>!o.userData.helper&&o.userData.nodeType!=='LuaScript'),true);if(hits.length){let target=hits[0].object;while(target.parent&&target.parent!==state.rootNode)target=target.parent;if(target!==state.rootNode)selectObject(target);}
 }
 viewport.addEventListener('pointerdown',e=>{
   state.activePointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
@@ -196,10 +215,10 @@ viewport.addEventListener('pointermove',e=>{
 },{passive:false});
 viewport.addEventListener('pointerup',endPointer);viewport.addEventListener('pointercancel',endPointer);viewport.addEventListener('wheel',e=>{state.spherical.radius=THREE.MathUtils.clamp(state.spherical.radius+e.deltaY*.008,2,20);},{passive:true});viewport.addEventListener('contextmenu',e=>e.preventDefault());
 const resizeObserver=new ResizeObserver(()=>resizeViewport());resizeObserver.observe(viewport);window.addEventListener('resize',resizeViewport);window.addEventListener('orientationchange',()=>setTimeout(resizeViewport,180));window.visualViewport?.addEventListener('resize',resizeViewport);
-$('#play').onclick=()=>{data.playing=!data.playing;state.drag=null;state.orbit=null;$('#runHud').classList.toggle('hidden',!data.playing);$('#play').textContent=data.playing?'■ DETENER':'▶ JUGAR';$('#fpsLabel').textContent=data.playing?'EJECUTANDO':'EDITOR';setGizmoMode(data.mode);toast(data.playing?'Modo juego · controles táctiles':'Modo edición');};
-$('#jump').addEventListener('pointerdown',e=>e.stopPropagation());$('#action').addEventListener('pointerdown',e=>e.stopPropagation());$('#jump').onclick=()=>{const p=data.objects.find(o=>o.name.startsWith('Player'));if(p){p.position.y+=.55;setTimeout(()=>p.position.y=Math.max(.1,p.position.y-.55),220);}};$('#action').onclick=()=>toast('Acción móvil');
+$('#play').onclick=()=>{if(data.playing)stopGame();else startGame();};$('#pause').onclick=()=>{if(!data.playing){toast('Ejecuta el juego para pausarlo');return;}state.paused=!state.paused;$('#pause').classList.toggle('active',state.paused);$('#bottomStatus').textContent=state.paused?'Juego pausado':'Juego en ejecución';};
+$('#jump').addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();state.jumpQueued=true;});$('#action').addEventListener('pointerdown',e=>e.stopPropagation());$('#action').onclick=()=>toast('Acción del jugador');
 const stick=$('#stick'),knob=$('.stick-knob');let stickId=null,moveVec={x:0,z:0};
-function stickMove(e){const r=stick.getBoundingClientRect();let x=e.clientX-r.left-r.width/2,y=e.clientY-r.top-r.height/2,m=Math.min(23,Math.hypot(x,y)),a=Math.atan2(y,x);x=Math.cos(a)*m;y=Math.sin(a)*m;knob.style.transform=`translate(${x}px,${y}px)`;moveVec.x=x/23;moveVec.z=y/23;}
+function stickMove(e){const r=stick.getBoundingClientRect(),limit=Math.max(1,r.width*.31);let x=e.clientX-r.left-r.width/2,y=e.clientY-r.top-r.height/2,m=Math.min(limit,Math.hypot(x,y)),a=Math.atan2(y,x);x=Math.cos(a)*m;y=Math.sin(a)*m;knob.style.transform=`translate(${x}px,${y}px)`;moveVec.x=x/limit;moveVec.z=y/limit;}
 stick.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();stickId=e.pointerId;stick.setPointerCapture(e.pointerId);stickMove(e);});stick.addEventListener('pointermove',e=>{if(stickId===e.pointerId)stickMove(e);});stick.addEventListener('pointerup',e=>{e.stopPropagation();stickId=null;moveVec={x:0,z:0};knob.style.transform='';});stick.addEventListener('pointercancel',()=>{stickId=null;moveVec={x:0,z:0};knob.style.transform='';});
 document.querySelectorAll('.tool').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tool').forEach(x=>x.classList.remove('active'));b.classList.add('active');data.tab=b.dataset.tab;if(data.tab==='scene')$('#drawer').classList.remove('open');else openDrawer(data.tab);});
 document.querySelectorAll('.gizmo-mode').forEach(b=>b.onclick=()=>{document.querySelectorAll('.gizmo-mode').forEach(x=>x.classList.toggle('active',x===b));setGizmoMode(b.dataset.mode);});
@@ -219,22 +238,16 @@ async function checkForUpdate(automatic=false){
 $('#checkUpdates').onclick=()=>checkForUpdate(false);
 $('#checkUpdatesHome').onclick=()=>checkForUpdate(false);
 setTimeout(()=>checkForUpdate(true),1800);
-function openDrawer(tab){const d=$('#drawer'),body=$('#drawerContent');d.classList.add('open');
-  if(tab==='script'){body.innerHTML='<div class="drawer-inner"><h3>Script · Lua</h3><textarea class="codebox" id="luaEditor" spellcheck="false"></textarea><div class="action-row"><button id="runLua" class="small-btn accent">▶ Ejecutar script</button><button id="resetLua" class="small-btn">Restaurar plantilla</button><span id="luaResult" class="lua-result"></span></div></div>';$('#luaEditor').value=data.script;$('#luaEditor').oninput=e=>data.script=e.target.value;$('#runLua').onclick=runLua;$('#resetLua').onclick=()=>{initSceneScript();$('#luaEditor').value=data.script;toast('Plantilla restaurada');};}
-  else if(tab==='transform'){d.classList.remove('open');return;}
-  else if(tab==='hud'){body.innerHTML='<div class="drawer-inner"><h3>HUD</h3><div class="hud-preview"><div class="stick" data-hud="stick"><div class="stick-knob"></div></div><div class="run-buttons"><button data-hud="jump">↑</button><button data-hud="action">●</button></div></div><div class="action-row"><button id="resetHud" class="small-btn">Restablecer</button></div></div>';enableHudMove();$('#resetHud').onclick=()=>openDrawer('hud');}
-  else {d.classList.remove('open');return;}
-}
-function initSceneScript(){data.script=data.project==='fps'?'-- FPS Starter · Lua\nfunction start()\n print("FPS listo")\nend\nfunction update(dt)\n -- lógica de movimiento\nend\nstart()':'-- Starter · Lua\nfunction start()\n print("Proyecto iniciado")\nend\nfunction update(dt)\n -- lógica del juego\nend\nstart()';}
-function applyAxisStep(key){if(!data.selected)return;const sign=key.startsWith('-')?-1:1,axis=key.replace('-',''),o=data.selected;if(data.mode==='move')o.position[axis]+=sign*.25;else if(data.mode==='rotate')o.rotation[axis]+=sign*.2;else o.scale[axis]=Math.max(.05,o.scale[axis]+sign*.1);updateInspector();syncGizmo();}
-function runLua(){if(!state.luaWorker)setWorker();const b=$('#runLua');b.disabled=true;$('#luaResult').textContent='Ejecutando…';clearTimeout(state.luaTimer);state.luaTimer=setTimeout(()=>{state.luaWorker?.terminate();state.luaWorker=null;if(b)b.disabled=false;$('#luaResult').textContent='Tiempo agotado (1,5 s); ejecución detenida.';toast('Lua detenido por límite de tiempo');},1500);state.luaWorker.postMessage({source:data.script});}
-function enableHudMove(){document.querySelectorAll('[data-hud]').forEach(el=>{let dragging=false,ox=0,oy=0;el.onpointerdown=e=>{dragging=true;ox=e.clientX-el.offsetLeft;oy=e.clientY-el.offsetTop;el.setPointerCapture(e.pointerId);e.stopPropagation();};el.onpointermove=e=>{if(!dragging)return;const p=el.parentElement,r=p.getBoundingClientRect();el.style.left=Math.max(0,Math.min(r.width-el.offsetWidth,e.clientX-r.left-ox))+'px';el.style.top=Math.max(0,Math.min(r.height-el.offsetHeight,e.clientY-r.top-oy))+'px';el.style.bottom='auto';el.style.right='auto';};el.onpointerup=()=>dragging=false;});}
+function openDrawer(tab){const d=$('#drawer'),body=$('#drawerContent');if(tab!=='script'){d.classList.remove('open');return;}d.classList.add('open');const script=ensureScriptForSelected();data.script=script.userData.scriptText||'';body.innerHTML=`<div class="drawer-inner"><h3>${script.parent?.name||'Objeto'} · ${script.name}</h3><textarea class="codebox" id="luaEditor" spellcheck="false"></textarea><div class="action-row"><button id="runLua" class="small-btn accent">Ejecutar</button><button id="resetLua" class="small-btn">Restablecer</button><span id="luaResult" class="lua-result"></span></div></div>`;$('#luaEditor').value=data.script;$('#luaEditor').oninput=e=>{data.script=e.target.value;script.userData.scriptText=data.script;};$('#runLua').onclick=runLua;$('#resetLua').onclick=()=>{script.userData.scriptText=`-- Script de ${script.parent?.name||'objeto'}\nfunction start()\n  print("Listo: " .. node.name)\nend\nfunction update(dt)\nend`;data.script=script.userData.scriptText;$('#luaEditor').value=data.script;toast('Script restablecido');};}
+function executeLua(source,target,automatic=false,live=false){if(state.luaWorker)state.luaWorker.terminate();setWorker();state.luaTarget=target;state.luaLive=live;state.luaWaiting=true;const b=$('#runLua'),result=$('#luaResult');if(b)b.disabled=true;if(result)result.textContent='Ejecutando…';clearTimeout(state.luaTimer);state.luaTimer=setTimeout(()=>{state.luaWorker?.terminate();state.luaWorker=null;state.luaLive=false;state.luaWaiting=false;if(b)b.disabled=false;if(result)result.textContent='Tiempo agotado; ejecución detenida.';if(!automatic)toast('Lua detenido por límite de tiempo');},1500);state.luaWorker.postMessage({type:'run',source,nodeName:target?.name||'Node3D',persistent:live});}
+function runLua(){const selected=data.selected?.userData.nodeType==='LuaScript'?data.selected:ensureScriptForSelected();selected.userData.scriptText=$('#luaEditor').value;data.script=selected.userData.scriptText;executeLua(data.script,selected.parent||selected,false,false);}
+$('.drawer-grip').onclick=()=>$('#drawer').classList.toggle('open');
 openDrawer('scene');
 $('#treeFilter').addEventListener('input',e=>{const q=e.target.value.trim().toLowerCase();document.querySelectorAll('#nodeList .node-item').forEach(n=>{n.hidden=!n.textContent.toLowerCase().includes(q);});});
 document.querySelectorAll('[data-dock="scene"]').forEach(b=>b.onclick=()=>{$('#nodeList').classList.remove('hidden');$('#fileList').classList.add('hidden');document.querySelectorAll('.tree .dock-tab[data-dock]').forEach(x=>x.classList.toggle('active',x===b));});
 document.querySelectorAll('[data-dock="files"]').forEach(b=>b.onclick=()=>{$('#nodeList').classList.add('hidden');$('#fileList').classList.remove('hidden');document.querySelectorAll('.tree .dock-tab[data-dock]').forEach(x=>x.classList.toggle('active',x===b));});
-document.querySelectorAll('.main-modes [data-tool="script"]').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tool').forEach(x=>x.classList.toggle('active',x.dataset.tab==='script'));openDrawer('script');});
+document.querySelectorAll('.main-modes [data-tool="script"]').forEach(b=>b.onclick=()=>{ensureScriptForSelected();openDrawer('script');});
 document.querySelectorAll('.main-modes [data-tool="game"]').forEach(b=>b.onclick=()=>{$('#play').click();});
-document.querySelectorAll('.resource-tab').forEach(b=>b.onclick=()=>{if(b.classList.contains('add-resource')){toast('Escena nueva');return;}document.querySelectorAll('.resource-tab').forEach(x=>x.classList.remove('active'));b.classList.add('active');});
+$('#toggleGrid').onclick=()=>{state.grid.visible=!state.grid.visible;$('#toggleGrid').classList.toggle('active',state.grid.visible);};
 document.addEventListener('visibilitychange',()=>{if(document.hidden){stopRender();}else if(!editor.classList.contains('hidden'))startRender();});
-window.addEventListener('keydown',e=>{if(e.key==='Escape'&&data.playing)$('#play').click();});
+window.addEventListener('keydown',e=>{if(e.key==='Escape'&&data.playing)stopGame();});
