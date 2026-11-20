@@ -1,17 +1,17 @@
-# MobiForge 3D v0.1.11
+# MobiForge 3D v0.1.13
 
-Editor táctil de juegos 3D Android horizontal.
+Editor móvil de escenas 3D.
 
-## Sistema de escenas
-- Las pestañas de escena aparecen en la franja sobre el visor 3D. Toca una para cambiar de escena, usa **×** para cerrar la pestaña sin borrar su archivo y **＋** para crear una escena nueva.
-- Cada escena conserva su propio árbol, transformaciones y scripts. Se guarda automáticamente al cambiar o cerrar pestañas y con el botón Guardar.
-- El icono de cadena del panel de jerarquía permite instanciar una escena guardada como hija del nodo seleccionado. La instancia reutiliza los tipos de nodo contenidos en esa escena; la jerarquía muestra ⛓ en sus nodos raíz.
-- La pestaña **Escenas** permite abrir, instanciar y borrar archivos de escena. La pestaña **Archivos** muestra y permite borrar los JSON locales de `scenes/` y `scripts/`.
-- Las carpetas son rutas virtuales representadas por claves jerárquicas en `localStorage`, separadas por proyecto. No se crean carpetas físicas en Android.
-- No se añadieron tipos de nodo al proyecto para el sistema de escenas. La instancia clona los nodos guardados existentes.
+- Quité los cubos y esferas de relleno de las escenas nuevas y de las plantillas de inicio. Se conserva el plano base y la cuadrícula del editor; el viewport ahora usa una paleta oscura/neutra con iluminación más sobria.
+- Ordené y alineé las barras superiores, pestañas, botones y estados del HUD para uso horizontal.
+- Los iconos de nodos 3D aparecen en rojo y los de 2D en verde cuando existan nodos 2D; no se añadieron tipos nuevos de nodo.
+- El modo Script tiene resaltado básico de Lua/GLSL y muestra el mensaje de error devuelto por Lua, incluyendo línea cuando el runtime la informa.
+- Añadí al bridge Lua compatibilidad para el patrón de outline del script: `node:get_child("OutlineMesh")`, proxy `set_scale`, propiedades `node.material.outline_*` y emisión. El outline se dibuja como una capa geométrica exterior; no es un shader de contorno de Unreal.
+- La función `update(dt)` se ejecuta continuamente mientras el juego corre. Para ver el pulso, aplica el script y ejecuta el juego.
+- Lua ejecuta APIs proporcionadas por MobiForge, no APIs arbitrarias de Godot/Unreal. Los errores de funciones y sintaxis no compatibles se reportan en el editor.
 
-## Scripts y modelos
-El contenido de cada script se guarda separado por objeto en `scripts/<proyecto>/<escena>/<objeto>.json`; la escena guarda los enlaces a esos scripts en `scenes/<proyecto>/<escena>.json`. Los modelos GLB/GLTF no se incrustan en estos JSON y deben reimportarse si la escena los requiere.
+## Sobre el script enviado
+El texto usa Lua válido en cuanto a funciones, tablas, `pcall`, `math.sin` y `update(dt)`, salvo que el `*` inicial de `*--` se haya copiado literalmente: Lua marcaría `*` como error de sintaxis; elimina ese carácter si está en el editor. Antes el script no podía producir su outline porque Fengari solo exponía `node.name` y las cuatro funciones globales de movimiento: no existían `node:get_child`, `node.material.outline_enabled`, ni el proxy `OutlineMesh:set_scale`. Esta versión implementa ese subconjunto de compatibilidad. Los shaders/materiales especiales o meshes de outline arbitrarios de Unreal siguen fuera de esa API.
 
-## Validación
-La sintaxis JS y la estructura de los handlers/IDs se revisan antes del build. Compilación, firma y orientación Android se verifican en CI; eso no sustituye una prueba táctil/visual en el dispositivo.
+## Guardado
+Las escenas y los scripts persisten en rutas virtuales `scenes/` y `scripts/` por proyecto en `localStorage`. La compilación y el APK se verifican en CI; eso no reemplaza la prueba visual/táctil en Android.

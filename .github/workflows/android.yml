@@ -26,13 +26,13 @@ jobs:
         run: npm install
       - name: Build web app
         env:
-          VITE_APP_VERSION: 0.1.11
+          VITE_APP_VERSION: 0.1.13
         run: npm run build
       - name: Generate Android wrapper
         run: npx cap add android
       - name: Add native in-app updater and version code
         env:
-          APP_VERSION: 0.1.11
+          APP_VERSION: 0.1.13
         run: |
           mkdir -p android/app/src/main/java/com/blopex/mobiforge3d android/app/src/main/res/xml
           cp android-native/AppUpdaterPlugin.java android/app/src/main/java/com/blopex/mobiforge3d/
@@ -150,16 +150,16 @@ jobs:
       - name: Publish APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MobiForge3D-v0.1.11-signed-APK
+          name: MobiForge3D-v0.1.13-signed-APK
           path: android/app/build/outputs/apk/release/MobiForge3D.apk
           if-no-files-found: error
           retention-days: 30
       - name: Publish public APK release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.1.11
-          name: MobiForge 3D v0.1.11 (pestañas y archivos de escenas)
-          body: 'Pestañas de escenas sobre el viewport con cierre y nueva escena; cambio entre escenas independientes, instanciación bajo el nodo seleccionado con marca de cadena en jerarquía; archivos locales separados en scenes/ y scripts/, con borrado desde Escenas/Archivos. No se añadieron tipos de nodo. Se conservan las funciones existentes de Script. Build firmado y orientación landscape verificados en CI; no sustituye prueba visual/táctil en dispositivo.'
+          tag_name: v0.1.13
+          name: MobiForge 3D v0.1.13 (escenas vacías, HUD y Lua)
+          body: 'Escena inicial sin cubos y esferas de demostración; viewport oscuro y neutro; iconos del árbol 2D verdes y 3D rojos; editor Lua/GLSL con resaltado de sintaxis y errores detallados. Compatibilidad Lua con node:get_child("OutlineMesh"), node.material outline/emission y pulso con set_scale. Las escenas siguen en pestañas/carpetas locales. Compilación, firma y orientación landscape verificados en CI; falta prueba visual/táctil en dispositivo.'
           files: android/app/build/outputs/apk/release/MobiForge3D.apk
           make_latest: true
           fail_on_unmatched_files: true
