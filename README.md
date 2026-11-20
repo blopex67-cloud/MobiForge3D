@@ -1,17 +1,14 @@
-# MobiForge 3D v0.1.4
+# MobiForge 3D v0.1.5
 
-Editor Android en horizontal, creado con Capacitor, Three.js y runtime Lua aislado.
+Editor Android táctil en horizontal con una interfaz de trabajo sobria inspirada en editores 3D: árbol de escena y archivos a la izquierda, viewport 3D con barra de herramientas al centro, inspector a la derecha y panel inferior. La captura del usuario se toma como referencia de distribución y densidad; no usa tema neón, tarjetas flotantes ni gradientes decorativos de interfaz.
 
-## Mejoras de esta auditoría
-- Gizmos 3D reales de traslación, rotación y escala por eje; hit targets táctiles amplios, raycast prioritario y órbita bloqueada durante la manipulación.
-- Tamaño visual del gizmo compensado según distancia de cámara y alto del viewport.
-- Zoom con dos dedos, canvas actualizado con `ResizeObserver`, cambios de orientación y área visible; manifest Android principal y manifest mergeado validados como `landscape` en CI.
-- Render solo mientras el editor está activo; DPR limitado a 1.25, sombras de 512 px y liberación de geometrías/contexto al cambiar de escena.
-- Lua ejecutado en Web Worker sin acceso a `os`, `io`, `debug` ni `package`; se cancela tras 1.5 s para evitar congelar el hilo de la interfaz.
-- Preserva proyectos de inicio FPS/TPS, inspector, jerarquía, HUD y herramientas de escena.
-
-## APK
-El workflow de GitHub Actions construye un APK debug, lo publica como artifact y crea una Release pública al actualizar `main`. Un build exitoso confirma el empaquetado y la orientación del manifest mergeado; no equivale a probar gestos o rendimiento en un teléfono físico.
+## Incluye
+- Escenas de inicio FPS y TPS; creación de proyectos y nodos básicos.
+- Gizmos 3D de mover, rotar y escalar en ejes X/Y/Z, con prioridad de raycast y órbita bloqueada mientras arrastras.
+- Tamaño aparente de gizmos ajustado por distancia, viewport redimensionable y zoom de dos dedos.
+- Runtime Lua en Web Worker, sin bibliotecas `os`, `io`, `debug` ni `package`, con límite de ejecución de 1,5 segundos.
+- Ajustes de rendimiento móvil: DPR limitado, sombras contenidas, render detenido fuera del editor y liberación de recursos al cambiar de escena.
+- Build CI fija la Activity principal en landscape y valida que el manifiesto Android combinado mantenga landscape antes de publicar el APK.
 
 ## Build local
 Requiere Node.js 20+ y Android SDK/JDK 21.
@@ -24,5 +21,5 @@ npx cap sync android
 cd android && ./gradlew assembleDebug
 ```
 
-## Limitaciones actuales
-Prototipo inicial, no reemplazo completo de Godot. La demo no implementa colisiones completas, importación GLB ni API Lua para editar nodos; la escena se guarda localmente y el APK debug no es de Play Store.
+## Verificación y alcance
+Una compilación y la validación del manifest no prueban la apariencia, la orientación efectiva ni la respuesta táctil en un teléfono; esa verificación física queda pendiente. Es un prototipo, no un reemplazo completo de Godot: todavía no incluye colisiones completas, importación GLB ni API Lua para manipular nodos. APK debug, no firmado para Play Store.

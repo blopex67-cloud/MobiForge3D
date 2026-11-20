@@ -73,15 +73,15 @@ function disposePreviousScene() {
 function initScene(which) {
   disposePreviousScene();
   data.project=which; data.objects=[]; data.selected=null;
-  state.scene=new THREE.Scene(); state.scene.background=new THREE.Color('#111923'); state.scene.fog=new THREE.Fog('#111923',15,42);
+  state.scene=new THREE.Scene(); state.scene.background=new THREE.Color('#aeb8c0'); state.scene.fog=new THREE.Fog('#777c75',13,42);
   state.camera=new THREE.PerspectiveCamera(48,1,.1,100); state.camera.position.set(6,5,7);
   state.renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,powerPreference:'high-performance'});
   state.renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1.25)); state.renderer.shadowMap.enabled=true; state.renderer.shadowMap.type=THREE.PCFSoftShadowMap; state.renderer.outputColorSpace=THREE.SRGBColorSpace;
   viewport.replaceChildren(state.renderer.domElement); state.raycaster=new THREE.Raycaster();
   state.scene.add(new THREE.HemisphereLight(0xb9d9ef,0x243140,2.0));
   const light=new THREE.DirectionalLight(0xffedcf,2.7); light.position.set(4,8,5); light.castShadow=true; light.shadow.mapSize.set(512,512); state.scene.add(light);
-  const ground=new THREE.Mesh(new THREE.PlaneGeometry(30,30),new THREE.MeshStandardMaterial({color:'#202b36',roughness:.88})); ground.rotation.x=-Math.PI/2; ground.position.y=-.56; ground.receiveShadow=true; ground.name='Suelo'; ground.userData.nodeType='Plane'; state.scene.add(ground); data.objects.push(ground);
-  const grid=new THREE.GridHelper(30,30,'#526578','#263746'); grid.position.y=-.55; grid.userData.helper=true; state.scene.add(grid);
+  const ground=new THREE.Mesh(new THREE.PlaneGeometry(80,80),new THREE.MeshStandardMaterial({color:'#66675f',roughness:.96})); ground.rotation.x=-Math.PI/2; ground.position.y=-.56; ground.receiveShadow=true; ground.name='Suelo'; ground.userData.nodeType='Plane'; state.scene.add(ground); data.objects.push(ground);
+  const grid=new THREE.GridHelper(80,80,'#766f5e','#858273'); grid.position.y=-.55; grid.userData.helper=true; state.scene.add(grid);
   if(which==='fps') {
     makeNode('Player (FPS)','Capsule',[0,.1,0],0x55dfc2); makeNode('Caja','Box',[-1.7,.1,-1],0x8578ff); makeNode('Luz','Sphere',[2,.4,-1.5],0xffbf70);
     data.script='-- FPS Starter · Lua\nfunction start()\n  print("FPS listo")\nend\n\nfunction update(dt)\n  -- lógica de movimiento\nend\n\nstart()'; $('#projectName').textContent='First Person Starter';
@@ -210,5 +210,11 @@ function applyAxisStep(key){if(!data.selected)return;const sign=key.startsWith('
 function runLua(){if(!state.luaWorker)setWorker();const b=$('#runLua');b.disabled=true;$('#luaResult').textContent='Ejecutando…';clearTimeout(state.luaTimer);state.luaTimer=setTimeout(()=>{state.luaWorker?.terminate();state.luaWorker=null;if(b)b.disabled=false;$('#luaResult').textContent='Tiempo agotado (1,5 s); ejecución detenida.';toast('Lua detenido por límite de tiempo');},1500);state.luaWorker.postMessage({source:data.script});}
 function enableHudMove(){document.querySelectorAll('[data-hud]').forEach(el=>{let dragging=false,ox=0,oy=0;el.onpointerdown=e=>{dragging=true;ox=e.clientX-el.offsetLeft;oy=e.clientY-el.offsetTop;el.setPointerCapture(e.pointerId);e.stopPropagation();};el.onpointermove=e=>{if(!dragging)return;const p=el.parentElement,r=p.getBoundingClientRect();el.style.left=Math.max(0,Math.min(r.width-el.offsetWidth,e.clientX-r.left-ox))+'px';el.style.top=Math.max(0,Math.min(r.height-el.offsetHeight,e.clientY-r.top-oy))+'px';el.style.bottom='auto';el.style.right='auto';};el.onpointerup=()=>dragging=false;});}
 openDrawer('scene');
+$('#treeFilter').addEventListener('input',e=>{const q=e.target.value.trim().toLowerCase();document.querySelectorAll('#nodeList .node-item').forEach(n=>{n.hidden=!n.textContent.toLowerCase().includes(q);});});
+document.querySelectorAll('[data-dock="scene"]').forEach(b=>b.onclick=()=>{$('#nodeList').classList.remove('hidden');$('#fileList').classList.add('hidden');document.querySelectorAll('.tree .dock-tab[data-dock]').forEach(x=>x.classList.toggle('active',x===b));});
+document.querySelectorAll('[data-dock="files"]').forEach(b=>b.onclick=()=>{$('#nodeList').classList.add('hidden');$('#fileList').classList.remove('hidden');document.querySelectorAll('.tree .dock-tab[data-dock]').forEach(x=>x.classList.toggle('active',x===b));});
+document.querySelectorAll('.main-modes [data-tool="script"]').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tool').forEach(x=>x.classList.toggle('active',x.dataset.tab==='script'));openDrawer('script');});
+document.querySelectorAll('.main-modes [data-tool="game"]').forEach(b=>b.onclick=()=>{$('#play').click();});
+document.querySelectorAll('.resource-tab').forEach(b=>b.onclick=()=>{if(b.classList.contains('add-resource')){toast('Escena nueva');return;}document.querySelectorAll('.resource-tab').forEach(x=>x.classList.remove('active'));b.classList.add('active');});
 document.addEventListener('visibilitychange',()=>{if(document.hidden){stopRender();}else if(!editor.classList.contains('hidden'))startRender();});
 window.addEventListener('keydown',e=>{if(e.key==='Escape'&&data.playing)$('#play').click();});
