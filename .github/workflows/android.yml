@@ -25,19 +25,33 @@ jobs:
         run: npm run build
       - name: Generate Android wrapper
         run: npx cap add android
-      - name: Sync and compile debug APK
+      - name: Sync, set landscape and compile APK
         run: |
           npx cap sync android
           python3 - <<'PY'
+          import xml.etree.ElementTree as ET
           from pathlib import Path
-          p = Path('android/app/src/main/AndroidManifest.xml')
-          s = p.read_text()
-          s = s.replace('android:screenOrientation="unspecified"', 'android:screenOrientation="landscape"')
-          s = s.replace('android:screenOrientation="portrait"', 'android:screenOrientation="landscape"')
-          if 'android:screenOrientation=' not in s:
-              s = s.replace('<activity ', '<activity android:screenOrientation="landscape" ', 1)
-          p.write_text(s)
-          print('Manifest orientation set to landscape')
+          path = Path('android/app/src/main/AndroidManifest.xml')
+          tree = ET.parse(path)
+          root = tree.getroot()
+          ns = '{http://schemas.android.com/apk/res/android}'
+          launcher = None
+          for activity in root.findall('.//activity'):
+              for intent in activity.findall('intent-filter'):
+                  actions = [e.get(ns + 'name') for e in intent.findall('action')]
+                  cats = [e.get(ns + 'name') for e in intent.findall('category')]
+                  if 'android.intent.action.MAIN' in actions and 'android.intent.category.LAUNCHER' in cats:
+                      launcher = activity
+                      break
+              if launcher is not None:
+                  break
+          if launcher is None:
+              raise SystemExit('ERROR: launcher Activity was not found')
+          launcher.set(ns + 'screenOrientation', 'landscape')
+          tree.write(path, encoding='utf-8', xml_declaration=True)
+          root = ET.parse(path).getroot()
+          assert launcher.get(ns + 'screenOrientation') == 'landscape'
+          print('Verified launcher orientation:', launcher.get(ns + 'screenOrientation'))
           PY
           cd android
           chmod +x gradlew
@@ -45,16 +59,16 @@ jobs:
       - name: Publish APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MobiForge3D-debug-APK
+          name: MobiForge3D-v0.1.2-landscape-debug-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
       - name: Publish public APK release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.1.1
-          name: MobiForge 3D v0.1.1 (orientación horizontal)
-          body: 'Corrección de inicio del visor 3D y orientación horizontal. APK de depuración; prototipo inicial, no publicación de producción.'
+          tag_name: v0.1.2
+          name: MobiForge 3D v0.1.2 (horizontal verificado)
+          body: 'El build valida que la actividad principal de Android esté en landscape. APK debug; prototipo inicial.'
           files: android/app/build/outputs/apk/debug/app-debug.apk
           make_latest: true
           fail_on_unmatched_files: true
