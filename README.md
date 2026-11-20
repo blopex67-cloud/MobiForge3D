@@ -12,7 +12,7 @@ Prototipo de motor/editor de juegos pensado para crear desde un teléfono Androi
 - Vista previa de HUD con elementos arrastrables y guardado local del estado de escena.
 
 ## Desarrollo
-Requiere Node.js 20+ y Android SDK/JDK 17 para Android.
+Requiere Node.js 20+ y Android SDK/JDK 21 para Android.
 
 ```sh
 npm install
